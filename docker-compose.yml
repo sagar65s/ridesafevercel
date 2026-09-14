@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ridesafe-db
+    restart: always
+    env_file:
+      - .env.production
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: ridesafe-cache
+    restart: always
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - redis_data:/data
+
+  ridesafe:
+    image: ridesafe-local:latest
+    build:
+      context: .
+      args:
+        NEXT_PUBLIC_VAPID_PUBLIC_KEY: ${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+    container_name: ridesafe-app
+    restart: always
+    ports:
+      - "3500:3000"
+    env_file:
+      - .env.production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  # Optional hardware polling; enable with --profile tracking.
+  tracking-worker:
+    image: ridesafe-local:latest
+    profiles: [tracking]
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      APP_URL: http://ridesafe:3000
+    command: ["node", "scripts/tracking-worker.mjs"]
+    depends_on:
+      ridesafe:
+        condition: service_healthy
+
+  calendar-worker:
+    image: ridesafe-local:latest
+    profiles: [reminders]
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      APP_URL: http://ridesafe:3000
+    command: ["node", "scripts/calendar-worker.mjs"]
+    depends_on:
+      ridesafe:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_data:
