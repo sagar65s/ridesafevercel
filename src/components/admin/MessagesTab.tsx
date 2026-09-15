@@ -75,11 +75,11 @@ export default function MessagesTab() {
       <aside className="chat-contacts">
         <div style={{padding:14,fontWeight:800}}>{tx('Chats')}</div>
         <label className="chat-search"><Search size={15}/><input aria-label={tx('Filter chats')} placeholder={tx('Filter parents or drivers')} value={query} onChange={event=>setQuery(event.target.value)}/></label>
-        {contacts.map(contact=><button key={contact.id} onClick={()=>setSelected(contact.id)} className={`${selected===contact.id?'selected':''} ${contact.unread?'chat-contact-unread':''}`}><strong data-no-translate>{contact.name}{contact.unread>0&&<i className="chat-unread-dot" aria-label={tx('New activity')}/>}</strong><span>{tx(roleLabel(contact.role))}{contact.unread?` · ${contact.unread} ${tx('unread')}`:''}</span><small data-no-translate>{contact.last?.content||tx('Start a conversation')}</small></button>)}
+        {contacts.map(contact=><button key={contact.id} onClick={()=>setSelected(contact.id)} className={`${selected===contact.id?'selected':''} ${contact.unread?'chat-contact-unread':''}`}><strong data-no-translate>{contact.name}{contact.unread>0&&<i className="chat-unread-dot" aria-label={tx('New activity')}/>}</strong><span>{tx(roleLabel(contact.role))}{contact.unread?` · ${contact.unread} ${tx('unread')}`:''}</span><small>{contact.last?<span data-no-translate>{contact.last.content}</span>:tx('Start a conversation')}</small></button>)}
         {!contacts.length&&<Empty text="No parent or driver chats found"/>}
       </aside>
       <section className="chat-thread">
-        <header><strong data-no-translate>{active?.name||tx('Choose a chat')}</strong>{active&&<span>{tx(roleLabel(active.role))}</span>}</header>
+        <header><strong>{active?<span data-no-translate>{active.name}</span>:tx('Choose a chat')}</strong>{active&&<span>{tx(roleLabel(active.role))}</span>}</header>
         <div className="message-list">{thread.map(item=><div key={item.id} className={`message-bubble ${item.sender.id===me?.id?'mine':''}`}><strong>{item.sender.id===me?.id?tx('You'):tx(`${roleLabel(item.sender.role)} reply`)}</strong><p data-no-translate>{item.content}</p><time>{formatRideSafeDateTime(item.createdAt)}</time><button className="icon-button" aria-label={tx('Delete')} onClick={()=>void remove(item.id)}><Trash2 size={14}/></button></div>)}{active&&!thread.length&&<Empty text="No messages yet"/>}</div>
         <form className="message-compose" onSubmit={send}><input value={text} onChange={event=>setText(event.target.value)} maxLength={2000} required placeholder={tx('Type a message')}/><button className="transport-primary" disabled={busy||!selected}><Send size={17}/>{tx('Send')}</button></form>
       </section>

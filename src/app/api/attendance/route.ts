@@ -43,7 +43,7 @@ export async function GET(request: NextRequest) {
     const requestedOrganizationId =
       searchParams.get("organizationId") || undefined;
     if (actor.role === "SUPER_ADMIN" && !requestedOrganizationId)
-      return NextResponse.json({ trips: [], date: dateParam });
+      return NextResponse.json({ trips: [], archived: [], date: dateParam });
     const organizationId =
       actor.role === "SUPER_ADMIN"
         ? requestedOrganizationId
@@ -55,7 +55,9 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: "Invalid date" }, { status: 400 });
     }
 
-    const trips = await prisma.trip.findMany({
+    const selectedRoute = routeId ? await prisma.route.findFirst({where:{id:routeId,organizationId},select:{name:true}}) : null;
+    if(routeId&&!selectedRoute)return NextResponse.json({error:"Route not found in this school"},{status:404});
+    const [trips,archived] = await Promise.all([prisma.trip.findMany({
       where: {
         date: { gte: dayStart, lt: dayEnd },
         ...(routeId ? { routeId } : {}),
@@ -76,7 +78,11 @@ export async function GET(request: NextRequest) {
           select: { studentId: true, action: true, status: true, requestedAt: true },
         },
       },
-    });
+    }),prisma.attendanceImportRecord.findMany({
+      where:{organizationId,date:{gte:dayStart,lt:dayEnd},...(selectedRoute?{routeName:{equals:selectedRoute.name,mode:'insensitive' as const}}:{})},
+      orderBy:{createdAt:'desc'},take:1000,
+      select:{id:true,date:true,session:true,status:true,studentName:true,studentCode:true,matchedStudentId:true,routeName:true,busLabel:true,time:true,sourceFile:true},
+    })]);
 
     const routeIds = [...new Set(trips.map((t) => t.routeId))];
     const rosterByRoute = new Map<
@@ -179,7 +185,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ trips: result, date: dateParam });
+    return NextResponse.json({ trips: result, archived, date: dateParam });
   } catch (error) {
     console.error("Attendance GET Error:", error);
     return NextResponse.json(

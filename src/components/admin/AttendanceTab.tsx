@@ -23,6 +23,7 @@ interface TripAttendance {
 
 interface Route { id: string; name: string }
 interface Organization { id:string;name:string }
+interface ArchivedAttendance {id:string;date:string;session:string;status:string;studentName:string;studentCode:string|null;matchedStudentId:string|null;routeName:string|null;busLabel:string|null;time:string|null;sourceFile:string}
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   PICKED_UP:   { label: 'Picked Up',   color: 'var(--info)',    bg: 'rgba(59,130,246,0.12)' },
@@ -44,6 +45,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   const [organizations,setOrganizations]=useState<Organization[]>([])
   const [organizationId,setOrganizationId]=useState('')
   const [trips, setTrips] = useState<TripAttendance[]>([])
+  const [archived,setArchived]=useState<ArchivedAttendance[]>([])
   const [loading, setLoading] = useState(true)
   const [toast, setToast] = useState('')
   const [toastType, setToastType] = useState<'success' | 'error'>('success')
@@ -51,6 +53,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   const [importFile,setImportFile]=useState<File|null>(null)
   const [importing,setImporting]=useState(false)
   const [importIssues,setImportIssues]=useState<{row:number;error:string}[]>([])
+  const [importWarnings,setImportWarnings]=useState<{row:number;error:string}[]>([])
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast(msg); setToastType(type); setTimeout(() => setToast(''), 3000)
@@ -66,7 +69,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
     const qs = new URLSearchParams({ date, ...(routeId ? { routeId } : {}),...(currentRole==='SUPER_ADMIN'&&organizationId?{organizationId}:{}) })
     fetch(`/api/attendance?${qs}`)
       .then(r => r.json())
-      .then(d => { setTrips(d.trips || []); setLoading(false) })
+      .then(d => { setTrips(d.trips || []); setArchived(d.archived || []); setLoading(false) })
       .catch(() => setLoading(false))
   }, [date, routeId,currentRole,organizationId])
 
@@ -78,6 +81,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
       formatRideSafeDate(t.date),t.serviceType,t.routeName,t.busPlate||'',t.driverName,s.name,s.studentCode||'',s.grade,STATUS_META[s.status].label,
       s.timestamp ? formatRideSafeTime(s.timestamp) : '',s.parentPickupStatus,s.parentDropoffStatus,'RIDESAFE'
     ])))
+    archived.forEach(item=>rows.push([formatRideSafeDate(item.date),item.session,item.routeName||'',item.busLabel||'', '',item.studentName,item.studentCode||'','',item.status,item.time||'','','','UPLOADED_HISTORY']))
     const csv = rows.map(r => r.map(csvCell).join(',')).join('\n')
     const blob = new Blob([csv], { type: 'text/csv' })
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob)
@@ -88,7 +92,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
     if(!importFile)return showToast('Choose an Excel or CSV attendance file','error')
     if(currentRole==='SUPER_ADMIN'&&!organizationId)return showToast('Select a school before importing attendance','error')
     const body=new FormData();body.append('file',importFile);body.append('organizationId',organizationId);setImporting(true)
-    try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');setImportIssues(result.errors||[]);showToast(`${result.created} attendance records imported; ${result.skipped} rows skipped; ${result.duplicates||0} already recorded`,result.created?'success':'error');setImportFile(null);load()}
+    try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');setImportIssues(result.errors||[]);setImportWarnings(result.warnings||[]);showToast(`${result.created} trip records; ${result.archived||0} historical rows; ${result.skipped} skipped; ${result.duplicates||0} already recorded`,result.created||result.archived?'success':'error');setImportFile(null);if(result.archiveDate){setRouteId('');setDate(result.archiveDate)}else load()}
     catch(error){showToast(error instanceof Error?error.message:'Attendance import failed','error')}finally{setImporting(false)}
   }
 
@@ -141,13 +145,14 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
             </select>
             <select className="select-field" aria-label={translateUi('Sort attendance')} style={{width:'auto',minWidth:150}} value={sort} onChange={e=>setSort(e.target.value)}><option value="RECENT"><TranslatedText text="Recent first"/></option><option value="OLDEST"><TranslatedText text="Oldest first"/></option><option value="NAME"><TranslatedText text="Student name"/></option><option value="STATUS"><TranslatedText text="Attendance status"/></option></select>
             <button className="btn" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--surface-border)', display: 'flex', alignItems: 'center', gap: 6 }}
-              onClick={exportCSV} disabled={trips.length === 0}>
+              onClick={exportCSV} disabled={trips.length === 0 && archived.length === 0}>
               <Download size={16} /><TranslatedText text={" Export CSV "}/></button>
             {['SUPER_ADMIN','SCHOOL_ADMIN'].includes(currentRole)&&<><a className="btn" href="/templates/attendance-period.xlsx" download><Download size={16}/><TranslatedText text=" Excel Template "/></a><a className="btn" href="/templates/attendance-period.csv" download><Download size={16}/><TranslatedText text=" CSV Template "/></a><label className="btn bulk-file"><Upload size={16}/><span><TranslatedText text={importFile?.name||'Choose import file'}/></span><input type="file" accept=".xlsx,.csv" onChange={e=>setImportFile(e.target.files?.[0]||null)}/></label><button className="btn btn-primary" disabled={importing||!importFile} onClick={()=>void importAttendance()}><Upload size={16}/><TranslatedText text={importing?'Importing…':'Import'}/></button></>}
           </div>
         </div>
 
         {importIssues.length>0&&<div className="import-issues" role="status"><strong>{translateUi('Rows needing attention')}</strong><ul>{importIssues.map(item=><li key={item.row}>{translateUi('Row')} {item.row}: {translateUi(item.error)}</li>)}</ul></div>}
+        {importWarnings.length>0&&<div className="import-issues" role="status"><strong>{translateUi('Historical rows kept separate from trip attendance')}</strong><ul>{importWarnings.map(item=><li key={item.row}>{translateUi('Row')} {item.row}: {translateUi(item.error)}</li>)}</ul></div>}
 
         {/* Summary stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: '0.75rem', marginTop: '1.5rem' }}>
@@ -166,7 +171,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
         </div>
 
         {routesMissing.length > 0 && (
-          <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--text-muted)', background: 'var(--surface-2)', borderRadius: 8, padding: '0.6rem 0.9rem' }}><TranslatedText text={" No trip recorded on "}/><TranslatedText text={date}/><TranslatedText text={" for: "}/>{routesMissing.map(r => r.name).join(', ')}
+          <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--text-muted)', background: 'var(--surface-2)', borderRadius: 8, padding: '0.6rem 0.9rem' }}><TranslatedText text={" No trip recorded on "}/>{formatRideSafeDate(`${date}T00:00:00+08:00`)}<TranslatedText text={" for: "}/>{routesMissing.map(r => r.name).join(', ')}
           </div>
         )}
       </div>
@@ -176,7 +181,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
         <div style={{ display: 'grid', gap: 12 }}>
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 120, borderRadius: 12 }} />)}
         </div>
-      ) : trips.length === 0 ? (
+      ) : trips.length === 0 && archived.length === 0 ? (
         <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
           <CalendarDays size={40} style={{ opacity: 0.25, marginBottom: '1rem' }} />
           <div style={{ fontWeight: 600, marginBottom: 4 }}><TranslatedText text={"No trips on this date"}/></div>
@@ -228,6 +233,16 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
           ))}
         </div>
       )}
+      {!loading&&archived.length>0&&<section className="glass-panel historical-attendance" style={{padding:'1.5rem',marginTop:'1.25rem'}}>
+        <h3><Upload size={19}/>{translateUi('Uploaded historical attendance')}</h3>
+        <p>{translateUi('These rows have no verified live trip or bus assignment. They are kept for the school history, not treated as crew-confirmed boarding.')}</p>
+        <div className="historical-attendance-rows">{archived.map(item=><article key={item.id}>
+          <strong data-no-translate>{item.studentName}</strong>
+          <span>{translateUi(item.status.replaceAll('_',' '))} · {formatRideSafeDate(item.date)}{item.time?` · ${item.time}`:''}</span>
+          <small data-no-translate>{item.session} · {item.routeName||'—'} · {item.busLabel||'—'}</small>
+          <small>{item.matchedStudentId?translateUi('Student ID matched during import'):translateUi('Student assignment not verified')} · <span data-no-translate>{item.sourceFile}</span></small>
+        </article>)}</div>
+      </section>}
     </motion.div>
   )
 }

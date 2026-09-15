@@ -152,6 +152,29 @@ model Attendance {
   stop    Stop?   @relation(fields: [stopId], references: [id])
 }
 
+// Uploaded historical rows without a recorded trip are kept separate from
+// crew-confirmed attendance; source names remain snapshots, not assignments.
+model AttendanceImportRecord {
+  id             String   @id @default(cuid())
+  organizationId String
+  sourceKey      String
+  date           DateTime
+  session        String
+  status         String
+  studentName    String
+  studentCode    String?
+  matchedStudentId String?
+  routeName      String?
+  busLabel       String?
+  time           String?
+  sourceFile     String
+  importedById   String
+  createdAt      DateTime @default(now())
+
+  @@unique([organizationId, sourceKey])
+  @@index([organizationId, date])
+}
+
 model AttendanceRequest {
   id            String    @id @default(cuid())
   tripId        String
