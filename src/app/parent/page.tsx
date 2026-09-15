@@ -794,7 +794,7 @@ export default function ParentDashboard() {
               <div className="message-list">
                 {messages.map((m) => (
                   <div
-                    className={`message-bubble ${m.sender.id === me?.id ? "mine" : ""}`}
+                    className={`message-bubble ${m.sender.id === me?.id ? "mine" : !m.read ? "chat-new-message" : ""}`}
                     key={m.id}
                   >
                     <strong data-no-translate>{m.sender.name}</strong><small>{m.sender.role === 'SCHOOL_ADMIN' ? tx('School Admin reply') : m.sender.role === 'ADMIN' ? tx('Admin reply') : tx('You')}</small>

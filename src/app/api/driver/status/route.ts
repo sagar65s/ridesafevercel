@@ -112,8 +112,8 @@ export async function GET(request: NextRequest) {
     else {
       if (!bus.routeId || !bus.route)
         setupIssues.push("Assign an active route to this bus.");
-      if (!bus.driverId && !bus.maintainerId)
-        setupIssues.push("Assign an active driver or maintainer to this bus.");
+      if (!bus.driverId)
+        setupIssues.push("Assign an active driver to this bus before starting GPS tracking.");
       const mismatched = assignedStudents.length - routeStudents.length;
       if (mismatched)
         setupIssues.push(
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
       setupIssues,
       readyToStart: Boolean(
         bus?.route &&
-        (bus.driverId || bus.maintainerId) &&
+        bus.driverId &&
         students.length &&
         !setupIssues.length,
       ),

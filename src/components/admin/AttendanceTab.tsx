@@ -8,7 +8,7 @@ import { CheckCircle, AlertTriangle, Bus, Download, Upload, CalendarDays } from 
 import { formatRideSafeDate, formatRideSafeTime } from '@/lib/date-format'
 
 interface RosterEntry {
-  studentId: string; name: string; grade: string
+  studentId: string; studentCode?:string|null; name: string; grade: string
   status: 'PICKED_UP' | 'DROPPED_OFF' | 'ABSENT' | 'NOT_MARKED'
   attendanceId: string | null; timestamp: string | null
   parentPickupStatus: string; parentDropoffStatus: string
@@ -16,6 +16,7 @@ interface RosterEntry {
 
 interface TripAttendance {
   tripId: string; date: string; status: string
+  serviceType:string
   routeId: string; routeName: string; driverName: string; busPlate: string | null
   roster: RosterEntry[]
 }
@@ -49,6 +50,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   const [sort, setSort] = useState('RECENT')
   const [importFile,setImportFile]=useState<File|null>(null)
   const [importing,setImporting]=useState(false)
+  const [importIssues,setImportIssues]=useState<{row:number;error:string}[]>([])
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast(msg); setToastType(type); setTimeout(() => setToast(''), 3000)
@@ -71,9 +73,9 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer) }, [load])
 
   const exportCSV = () => {
-    const rows = [['Date','Session','Route','Bus','Driver','Student','Grade','Status','Time','Parent boarding confirmation','Parent drop-off confirmation','Source']]
+    const rows = [['Date','Session','Route','Bus','Driver','Student','Student ID','Grade','Status','Time','Parent boarding confirmation','Parent drop-off confirmation','Source']]
     trips.forEach(t => t.roster.forEach(s => rows.push([
-      formatRideSafeDate(t.date),'',t.routeName,t.busPlate||'',t.driverName,s.name,s.grade,STATUS_META[s.status].label,
+      formatRideSafeDate(t.date),t.serviceType,t.routeName,t.busPlate||'',t.driverName,s.name,s.studentCode||'',s.grade,STATUS_META[s.status].label,
       s.timestamp ? formatRideSafeTime(s.timestamp) : '',s.parentPickupStatus,s.parentDropoffStatus,'RIDESAFE'
     ])))
     const csv = rows.map(r => r.map(csvCell).join(',')).join('\n')
@@ -86,7 +88,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
     if(!importFile)return showToast('Choose an Excel or CSV attendance file','error')
     if(currentRole==='SUPER_ADMIN'&&!organizationId)return showToast('Select a school before importing attendance','error')
     const body=new FormData();body.append('file',importFile);body.append('organizationId',organizationId);setImporting(true)
-    try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');showToast(`${result.created} attendance records imported; ${result.skipped} rows skipped`);setImportFile(null);load()}
+    try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');setImportIssues(result.errors||[]);showToast(`${result.created} attendance records imported; ${result.skipped} rows skipped; ${result.duplicates||0} already recorded`,result.created?'success':'error');setImportFile(null);load()}
     catch(error){showToast(error instanceof Error?error.message:'Attendance import failed','error')}finally{setImporting(false)}
   }
 
@@ -144,6 +146,8 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
             {['SUPER_ADMIN','SCHOOL_ADMIN'].includes(currentRole)&&<><a className="btn" href="/templates/attendance-period.xlsx" download><Download size={16}/><TranslatedText text=" Excel Template "/></a><a className="btn" href="/templates/attendance-period.csv" download><Download size={16}/><TranslatedText text=" CSV Template "/></a><label className="btn bulk-file"><Upload size={16}/><span><TranslatedText text={importFile?.name||'Choose import file'}/></span><input type="file" accept=".xlsx,.csv" onChange={e=>setImportFile(e.target.files?.[0]||null)}/></label><button className="btn btn-primary" disabled={importing||!importFile} onClick={()=>void importAttendance()}><Upload size={16}/><TranslatedText text={importing?'Importing…':'Import'}/></button></>}
           </div>
         </div>
+
+        {importIssues.length>0&&<div className="import-issues" role="status"><strong>{translateUi('Rows needing attention')}</strong><ul>{importIssues.map(item=><li key={item.row}>{translateUi('Row')} {item.row}: {translateUi(item.error)}</li>)}</ul></div>}
 
         {/* Summary stats */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(120px,1fr))', gap: '0.75rem', marginTop: '1.5rem' }}>

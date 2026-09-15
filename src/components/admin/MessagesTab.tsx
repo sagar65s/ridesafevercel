@@ -35,7 +35,7 @@ export default function MessagesTab() {
       setMe(account.user)
       setMessages(inbox.messages||[])
       setUsers((directory.contacts||[]).filter((item:Person)=>item.id!==account.user.id))
-      setSelected(value=>value || (directory.contacts||[]).find((item:Person)=>item.id!==account.user.id)?.id || '')
+      setSelected(value=>value && (directory.contacts||[]).some((item:Person)=>item.id===value)?value:'')
       setError('')
     } catch(cause) { setError(cause instanceof Error?cause.message:'Unable to load messages') }
   },[])
@@ -75,7 +75,7 @@ export default function MessagesTab() {
       <aside className="chat-contacts">
         <div style={{padding:14,fontWeight:800}}>{tx('Chats')}</div>
         <label className="chat-search"><Search size={15}/><input aria-label={tx('Filter chats')} placeholder={tx('Filter parents or drivers')} value={query} onChange={event=>setQuery(event.target.value)}/></label>
-        {contacts.map(contact=><button key={contact.id} onClick={()=>setSelected(contact.id)} className={selected===contact.id?'selected':''}><strong data-no-translate>{contact.name}</strong><span>{tx(roleLabel(contact.role))}{contact.unread?` · ${contact.unread} ${tx('unread')}`:''}</span><small data-no-translate>{contact.last?.content||tx('Start a conversation')}</small></button>)}
+        {contacts.map(contact=><button key={contact.id} onClick={()=>setSelected(contact.id)} className={`${selected===contact.id?'selected':''} ${contact.unread?'chat-contact-unread':''}`}><strong data-no-translate>{contact.name}{contact.unread>0&&<i className="chat-unread-dot" aria-label={tx('New activity')}/>}</strong><span>{tx(roleLabel(contact.role))}{contact.unread?` · ${contact.unread} ${tx('unread')}`:''}</span><small data-no-translate>{contact.last?.content||tx('Start a conversation')}</small></button>)}
         {!contacts.length&&<Empty text="No parent or driver chats found"/>}
       </aside>
       <section className="chat-thread">

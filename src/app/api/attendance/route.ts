@@ -69,7 +69,7 @@ export async function GET(request: NextRequest) {
         attendances: {
           orderBy: { timestamp: "asc" },
           include: {
-            student: { select: { id: true, name: true, grade: true } },
+          student: { select: { id: true, name: true, grade: true, studentCode: true } },
           },
         },
         attendanceRequests: {
@@ -85,6 +85,7 @@ export async function GET(request: NextRequest) {
         id: string;
         name: string;
         grade: string;
+        studentCode: string | null;
         busId: string | null;
         isSelfPickup: boolean;
         selfPickupSession: string | null;
@@ -97,6 +98,7 @@ export async function GET(request: NextRequest) {
           id: true,
           name: true,
           grade: true,
+          studentCode: true,
           routeId: true,
           busId: true,
           isSelfPickup: true,
@@ -110,6 +112,7 @@ export async function GET(request: NextRequest) {
           id: s.id,
           name: s.name,
           grade: s.grade,
+          studentCode: s.studentCode,
           busId: s.busId,
           isSelfPickup: s.isSelfPickup,
           selfPickupSession: s.selfPickupSession,
@@ -137,6 +140,7 @@ export async function GET(request: NextRequest) {
           const parentDropoff = t.attendanceRequests.find((r) => r.studentId === s.id && r.action === "DROPPED_OFF");
           return {
             studentId: s.id,
+            studentCode: s.studentCode,
             name: s.name,
             grade: s.grade,
             status: a?.action || "NOT_MARKED",
@@ -151,6 +155,7 @@ export async function GET(request: NextRequest) {
         if (!roster.some((s) => s.studentId === studentId))
           roster.push({
             studentId,
+            studentCode: a.student.studentCode,
             name: a.student.name,
             grade: a.student.grade,
             status: a.action,
@@ -164,6 +169,7 @@ export async function GET(request: NextRequest) {
       return {
         tripId: t.id,
         date: t.date,
+        serviceType: t.serviceType,
         status: t.status,
         routeId: t.route.id,
         routeName: t.route.name,

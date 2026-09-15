@@ -223,9 +223,6 @@ export default function DriverDashboard() {
         if (Date.now() - lastSent.current >= 8000) {
           lastSent.current = Date.now();
           void api("/api/location", position.current)
-            .then(() => {
-              if (tab === "tracking") void load(true);
-            })
             .catch((cause) => setError(cause.message));
         }
       },
@@ -241,11 +238,11 @@ export default function DriverDashboard() {
       },
       { enableHighAccuracy: true, maximumAge: 3000, timeout: 20000 },
     );
-  }, [load, stopSharing, tab]);
+  }, [stopSharing]);
   useEffect(() => {
-    if (data.activeTrip) startSharing();
+    if (data.activeTrip && data.bus?.driver?.id === me?.id) startSharing();
     else stopSharing();
-  }, [data.activeTrip?.id, startSharing, stopSharing]);
+  }, [data.activeTrip?.id, data.bus?.driver?.id, me?.id, startSharing, stopSharing]);
   useEffect(
     () => () => {
       if (watch.current !== null)

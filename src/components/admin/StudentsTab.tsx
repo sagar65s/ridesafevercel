@@ -78,6 +78,7 @@ export default function StudentsTab({ searchQuery = '' }: { searchQuery?: string
   const [importFile,setImportFile]=useState<File|null>(null)
   const [importOrganizationId,setImportOrganizationId]=useState('')
   const [importing,setImporting]=useState(false)
+  const [importIssues,setImportIssues]=useState<{row:number;error:string}[]>([])
 
   const loadStudents = () => {
     Promise.all([
@@ -176,14 +177,14 @@ export default function StudentsTab({ searchQuery = '' }: { searchQuery?: string
   }
 
   const handleDelete = async (s: Student) => {
-    if (!confirm(`Deactivate "${s.name}"? Existing attendance and trip history will be preserved.`)) return
+    if (!confirm(`Permanently delete "${s.name}"? This cannot be undone. Students with attendance or other historical records cannot be deleted.`)) return
     setDeletingId(s.id)
     try {
       const res = await fetch(`/api/students/${s.id}`, { method: 'DELETE' })
       if (res.ok) {
-        showToast('Student deactivated; history preserved', 'success'); loadStudents()
+        showToast('Student permanently deleted', 'success'); loadStudents()
       } else {
-        const e = await res.json(); showToast(e.error || 'Failed to deactivate student', 'error')
+        const e = await res.json(); showToast(e.error || 'Failed to delete student', 'error')
       }
     } catch { showToast('Network error', 'error') } finally {
       setDeletingId(null)
@@ -231,7 +232,7 @@ export default function StudentsTab({ searchQuery = '' }: { searchQuery?: string
     if(!importFile)return showToast('Choose an Excel or CSV student file','error')
     if(currentRole==='SUPER_ADMIN'&&!importOrganizationId)return showToast('Select a school before importing students','error')
     const body=new FormData();body.append('file',importFile);body.append('organizationId',importOrganizationId);setImporting(true)
-    try{const response=await fetch('/api/students/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Student import failed');showToast(`${result.created} students imported; ${result.skipped} rows skipped`);setImportFile(null);loadStudents()}
+    try{const response=await fetch('/api/students/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Student import failed');setImportIssues([...(result.errors||[]),...(result.warnings||[])]);showToast(`${result.created} students added; ${result.updated||0} updated; ${result.skipped} rows skipped; ${(result.warnings||[]).length} assignment warnings`,result.created||result.updated?'success':'error');setImportFile(null);loadStudents()}
     catch(error){showToast(error instanceof Error?error.message:'Student import failed','error')}finally{setImporting(false)}
   }
 
@@ -295,6 +296,8 @@ export default function StudentsTab({ searchQuery = '' }: { searchQuery?: string
               <Plus size={16}/><TranslatedText text={" Add Student "}/></motion.button>
           </div>
         </div>
+
+        {importIssues.length>0&&<div className="import-issues" role="status"><strong>{translateUi('Rows needing attention')}</strong><ul>{importIssues.map(item=><li key={item.row}>{translateUi('Row')} {item.row}: {translateUi(item.error)}</li>)}</ul></div>}
 
         {/* Students list */}
         <div style={{ display:'grid', gap:'0.75rem' }}>

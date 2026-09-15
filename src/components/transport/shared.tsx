@@ -134,7 +134,7 @@ export function useUnreadActivity(){
   const load=useCallback(()=>api('/api/notifications').then(data=>setTypes((data.notifications||[]).filter((item:Notice)=>!item.read).map((item:Notice)=>item.type))).catch(()=>{}),[])
   useEffect(()=>{void load();const timer=window.setInterval(load,10000);return()=>window.clearInterval(timer)},[load])
   const has=useCallback((section:string)=>types.some(type=>activityMatches(section,type)),[types])
-  const clear=useCallback(async(section:string)=>{const selected=types.filter(type=>activityMatches(section,type));if(!selected.length)return;await api('/api/notifications',{markAll:true,types:[...new Set(selected)]},'PATCH').catch(()=>{});setTypes(items=>items.filter(type=>!selected.includes(type)))},[types])
+  const clear=useCallback(async(section:string)=>{const selected=types.filter(type=>activityMatches(section,type));if(!selected.length)return;if(section==='messages')return;await api('/api/notifications',{markAll:true,types:[...new Set(selected)]},'PATCH').catch(()=>{});setTypes(items=>items.filter(type=>!selected.includes(type)))},[types])
   return {has,clear,reload:load}
 }
 export function Workspace({

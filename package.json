@@ -32,6 +32,7 @@
     "jose": "^6.2.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
+    "jszip": "3.10.2",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.8.0",
     "next": "^16.3.4",
@@ -66,6 +67,14 @@
     "exceljs": {
       "uuid": "11.1.1"
     }
+  },
+  "allowScripts": {
+    "@prisma/client": true,
+    "@prisma/engines": true,
+    "core-js": true,
+    "esbuild": true,
+    "prisma": true,
+    "unrs-resolver": true
   },
   "engines": {
     "node": ">=20.9.0"
