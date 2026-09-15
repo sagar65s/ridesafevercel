@@ -5,7 +5,7 @@ import {join} from 'node:path'
 jest.mock('@/lib/authorization',()=>({getCurrentUser:jest.fn()}))
 jest.mock('@/lib/audit',()=>({writeAuditLog:jest.fn()}))
 jest.mock('@/lib/prisma',()=>({__esModule:true,default:{
-  trip:{findMany:jest.fn()},student:{findMany:jest.fn()},attendance:{createMany:jest.fn()},attendanceImportRecord:{createMany:jest.fn()},
+  trip:{findMany:jest.fn()},student:{findMany:jest.fn()},attendance:{createMany:jest.fn()},attendanceImportRecord:{createMany:jest.fn(),count:jest.fn()},$transaction:jest.fn(),
 }}))
 
 import prisma from '@/lib/prisma'
@@ -25,6 +25,8 @@ beforeEach(()=>{
   mock(prisma.trip.findMany).mockResolvedValue([])
   mock(prisma.student.findMany).mockResolvedValue([{id:'child',name:'Amy Student',studentCode:'STU-1',routeId:null,busId:null,pickupStopId:null,dropoffStopId:null}])
   mock(prisma.attendanceImportRecord.createMany).mockResolvedValue({count:1})
+  mock(prisma.attendanceImportRecord.count).mockResolvedValue(0)
+  mock(prisma.$transaction).mockImplementation(async work=>work(prisma))
   mock(prisma.attendance.createMany).mockResolvedValue({count:0})
 })
 
@@ -72,5 +74,18 @@ test('tenant scope cannot be chosen by another school admin',async()=>{
   form.set('file',new File(['Date,Status\n15/09/2026,Absent'],'attendance.csv'))
   const response=await POST(new NextRequest('http://localhost/api/attendance/import',{method:'POST',body:form}))
   expect(response.status).toBe(403)
+  expect(prisma.attendanceImportRecord.createMany).not.toHaveBeenCalled()
+})
+
+test('missing production archive migration returns a clear action before writing any trip records',async()=>{
+  mock(prisma.attendanceImportRecord.count).mockRejectedValue({code:'P2021',meta:{modelName:'AttendanceImportRecord',table:'public.AttendanceImportRecord'}})
+  mock(prisma.trip.findMany).mockResolvedValue([{id:'trip-1',date:new Date('2026-09-15T00:00:00+08:00'),serviceType:'PM',routeId:'route-a',busId:'bus-a',route:{name:'Route A'},bus:{busNumber:'BUS-001',plateNumber:'BUS-001'}}])
+  mock(prisma.student.findMany).mockResolvedValue([{id:'child',name:'Amy Student',studentCode:'STU-1',routeId:'route-a',busId:'bus-a',pickupStopId:'stop-a',dropoffStopId:'stop-b'}])
+  const form=new FormData()
+  form.set('file',new File(['Date,Session,Route,Bus,Student,Student ID,Status\n15/09/2026,AFTERNOON,Route A,BUS-001,Amy Student,STU-1,Absent\n15/09/2026,AFTERNOON,Old route,Old bus,Other Student,STU-2,Absent'],'mixed-attendance.csv'))
+  const response=await POST(new NextRequest('http://localhost/api/attendance/import',{method:'POST',body:form}))
+  expect(response.status).toBe(503)
+  expect(await response.json()).toMatchObject({code:'MIGRATION_REQUIRED',error:expect.stringContaining('migrate deploy')})
+  expect(prisma.attendance.createMany).not.toHaveBeenCalled()
   expect(prisma.attendanceImportRecord.createMany).not.toHaveBeenCalled()
 })

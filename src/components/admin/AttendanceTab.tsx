@@ -2,7 +2,7 @@
 import {csvCell} from '@/lib/csv'
 import { useTranslation as useLocaleText } from '@/i18n/provider'
 import { TranslatedText } from '@/i18n/provider'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle, AlertTriangle, Bus, Download, Upload, CalendarDays } from 'lucide-react'
 import { formatRideSafeDate, formatRideSafeTime } from '@/lib/date-format'
@@ -47,6 +47,9 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   const [trips, setTrips] = useState<TripAttendance[]>([])
   const [archived,setArchived]=useState<ArchivedAttendance[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError,setLoadError]=useState('')
+  const [archiveError,setArchiveError]=useState('')
+  const loadSequence=useRef(0)
   const [toast, setToast] = useState('')
   const [toastType, setToastType] = useState<'success' | 'error'>('success')
   const [sort, setSort] = useState('RECENT')
@@ -64,16 +67,17 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   }, [currentRole])
   useEffect(()=>{if(currentRole==='SUPER_ADMIN'&&!organizationId){Promise.resolve().then(()=>setRoutes([]));return}const query=currentRole==='SUPER_ADMIN'?`?organizationId=${encodeURIComponent(organizationId)}`:'';fetch(`/api/admin/routes${query}`).then(r => r.json()).then(d => setRoutes(d.routes || [])).catch(() => setRoutes([]))},[currentRole,organizationId])
 
-  const load = useCallback(() => {
-    setLoading(true)
+  const load = useCallback((silent=false) => {
+    const requestId=++loadSequence.current
+    if(!silent)setLoading(true)
     const qs = new URLSearchParams({ date, ...(routeId ? { routeId } : {}),...(currentRole==='SUPER_ADMIN'&&organizationId?{organizationId}:{}) })
     fetch(`/api/attendance?${qs}`)
-      .then(r => r.json())
-      .then(d => { setTrips(d.trips || []); setArchived(d.archived || []); setLoading(false) })
-      .catch(() => setLoading(false))
+      .then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to load school attendance');return data})
+      .then(d => {if(requestId!==loadSequence.current)return;setTrips(d.trips || []);setArchived(d.archived || []);setArchiveError(d.archiveError || '');setLoadError('');setLoading(false)})
+      .catch(error=>{if(requestId!==loadSequence.current)return;setLoadError(error instanceof Error?error.message:'Unable to load school attendance');if(!silent){setTrips([]);setArchived([])}setLoading(false)})
   }, [date, routeId,currentRole,organizationId])
 
-  useEffect(() => { const timer = setTimeout(load, 0); return () => clearTimeout(timer) }, [load])
+  useEffect(() => { const timer = setTimeout(()=>load(), 0);const refresh=window.setInterval(()=>load(true),10000);return () => {clearTimeout(timer);window.clearInterval(refresh);loadSequence.current++} }, [load])
 
   const exportCSV = () => {
     const rows = [['Date','Session','Route','Bus','Driver','Student','Student ID','Grade','Status','Time','Parent boarding confirmation','Parent drop-off confirmation','Source']]
@@ -91,8 +95,8 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   const importAttendance=async()=>{
     if(!importFile)return showToast('Choose an Excel or CSV attendance file','error')
     if(currentRole==='SUPER_ADMIN'&&!organizationId)return showToast('Select a school before importing attendance','error')
-    const body=new FormData();body.append('file',importFile);body.append('organizationId',organizationId);setImporting(true)
-    try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');setImportIssues(result.errors||[]);setImportWarnings(result.warnings||[]);showToast(`${result.created} trip records; ${result.archived||0} historical rows; ${result.skipped} skipped; ${result.duplicates||0} already recorded`,result.created||result.archived?'success':'error');setImportFile(null);if(result.archiveDate){setRouteId('');setDate(result.archiveDate)}else load()}
+    const body=new FormData();body.append('file',importFile);body.append('organizationId',organizationId);setImporting(true);setImportIssues([]);setImportWarnings([])
+    try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');setImportIssues(result.errors||[]);setImportWarnings(result.warnings||[]);showToast(`${result.created} trip records; ${result.archived||0} historical rows; ${result.skipped} skipped; ${result.duplicates||0} already recorded`,result.created||result.archived?'success':'error');setImportFile(null);if(result.archiveDate){setRouteId('');setDate(result.archiveDate);if(result.archiveDate===date&&!routeId)load()}else load()}
     catch(error){showToast(error instanceof Error?error.message:'Attendance import failed','error')}finally{setImporting(false)}
   }
 
@@ -151,6 +155,8 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
           </div>
         </div>
 
+        {loadError&&<div className="import-issues" role="alert"><strong>{translateUi('Attendance could not refresh')}</strong><p>{translateUi(loadError)}</p></div>}
+        {archiveError&&<div className="import-issues" role="status"><strong>{translateUi('Historical uploads unavailable until the database update')}</strong><p>{translateUi(archiveError)}</p></div>}
         {importIssues.length>0&&<div className="import-issues" role="status"><strong>{translateUi('Rows needing attention')}</strong><ul>{importIssues.map(item=><li key={item.row}>{translateUi('Row')} {item.row}: {translateUi(item.error)}</li>)}</ul></div>}
         {importWarnings.length>0&&<div className="import-issues" role="status"><strong>{translateUi('Historical rows kept separate from trip attendance')}</strong><ul>{importWarnings.map(item=><li key={item.row}>{translateUi('Row')} {item.row}: {translateUi(item.error)}</li>)}</ul></div>}
 

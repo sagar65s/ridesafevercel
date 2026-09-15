@@ -4,6 +4,7 @@ import {getCurrentUser} from '@/lib/authorization'
 import {parseImportDate,readTabularFile} from '@/lib/tabular-import'
 import {writeAuditLog} from '@/lib/audit'
 import {createHash} from 'node:crypto'
+import {ARCHIVE_MIGRATION_ERROR,isArchiveTableMissing} from '@/lib/attendance-archive'
 
 export const runtime='nodejs'
 const actionFor=(value:string)=>{const key=value.trim().toUpperCase().replace(/[\s-]+/g,'_');return ({PICKED:'PICKED_UP',BOARDED:'PICKED_UP',ON_BOARD:'PICKED_UP',DROPPED:'DROPPED_OFF',DROPPED_OFF:'DROPPED_OFF',ABSENT:'ABSENT',NOTMARKED:'NOT_MARKED'} as Record<string,string>)[key]||key}
@@ -52,9 +53,20 @@ export async function POST(request:NextRequest){
       const actions=status==='DROPPED_OFF'?['PICKED_UP','DROPPED_OFF']:[status]
       for(const action of actions)records.push({tripId:trip.id,studentId:student.id,stopId:action==='DROPPED_OFF'?student.dropoffStopId:student.pickupStopId,action,timestamp,recordedById:actor.id,dedupeKey:`attendance-import:${trip.id}:${student.id}:${action}`})
     }
-    const created=records.length?await prisma.attendance.createMany({data:records,skipDuplicates:true}):{count:0}
-    const historical=archived.length?await prisma.attendanceImportRecord.createMany({data:archived,skipDuplicates:true}):{count:0}
-    if(created.count||historical.count)await writeAuditLog({actorId:actor.id,organizationId,action:'IMPORT',entityType:'ATTENDANCE',details:{created:created.count,archived:historical.count,skipped:errors.length,fileName:file.name}})
+    // Check the new table before writing live rows. An older Vercel database
+    // must not leave a half-imported file when both row types are present.
+    if(archived.length)await prisma.attendanceImportRecord.count({where:{organizationId,sourceKey:'__archive_schema_check__'}})
+    const {created,historical}=await prisma.$transaction(async tx=>{
+      const created=records.length?await tx.attendance.createMany({data:records,skipDuplicates:true}):{count:0}
+      const historical=archived.length?await tx.attendanceImportRecord.createMany({data:archived,skipDuplicates:true}):{count:0}
+      return {created,historical}
+    })
+    if(created.count||historical.count)try{await writeAuditLog({actorId:actor.id,organizationId,action:'IMPORT',entityType:'ATTENDANCE',details:{created:created.count,archived:historical.count,skipped:errors.length,fileName:file.name}})}catch(auditError){console.error('Attendance import succeeded but audit delivery failed:',auditError)}
     return NextResponse.json({created:created.count,archived:historical.count,archiveDate:archived[0]?.date.toLocaleDateString('en-CA',{timeZone:'Asia/Kuala_Lumpur'})||null,skipped:errors.length,duplicates:records.length-created.count+archived.length-historical.count,errors:errors.slice(0,50),warnings:warnings.slice(0,50)})
-  }catch(error){return NextResponse.json({error:error instanceof Error?error.message:'Attendance import failed'},{status:400})}
+  }catch(error){
+    if(isArchiveTableMissing(error))return NextResponse.json({error:ARCHIVE_MIGRATION_ERROR,code:'MIGRATION_REQUIRED'},{status:503})
+    if(error instanceof Error&&(/Invalid date on row|Choose a file|Use Excel|Use one header|Formulas are not accepted|\.xlsx|\.csv|Workbook|row \d+/.test(error.message)))return NextResponse.json({error:error.message},{status:400})
+    console.error('Attendance import failed:',error)
+    return NextResponse.json({error:'Unable to import attendance. Check the file and the school assignments, then try again.'},{status:500})
+  }
 }

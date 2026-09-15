@@ -1,6 +1,6 @@
 'use client'
 import { TranslatedText } from '@/i18n/provider'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { formatRideSafeDate, formatRideSafeDateTime } from '@/lib/date-format'
 import { Trash2 } from 'lucide-react'
@@ -17,20 +17,25 @@ export default function TripHistoryTab({currentRole}:{currentRole:string}) {
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [loadError,setLoadError]=useState('')
+  const requestSequence=useRef(0)
   const [organizations,setOrganizations]=useState<{id:string;name:string}[]>([])
   const [organizationId,setOrganizationId]=useState('')
 
-  const load = useCallback((p: number) => {
-    setLoading(true)
-    fetch(`/api/trips/history?page=${p}${organizationId?`&organizationId=${encodeURIComponent(organizationId)}`:''}`).then(r => r.json()).then(d => {
-      setTrips(d.trips || []); setTotalPages(d.totalPages || 1); setPage(p); setLoading(false)
-    })
+  const load = useCallback((p: number,silent=false) => {
+    const requestId=++requestSequence.current
+    if(!silent)setLoading(true)
+    fetch(`/api/trips/history?page=${p}${organizationId?`&organizationId=${encodeURIComponent(organizationId)}`:''}`).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'Unable to load trip history');return data}).then(d => {
+      if(requestId!==requestSequence.current)return
+      setTrips(d.trips || []);setTotalPages(d.totalPages || 1);setPage(p);setLoadError('');setLoading(false)
+    }).catch(error=>{if(requestId!==requestSequence.current)return;setLoadError(error instanceof Error?error.message:'Unable to load trip history');if(!silent)setTrips([]);setLoading(false)})
   }, [organizationId])
   useEffect(()=>{if(currentRole==='SUPER_ADMIN')fetch('/api/admin/organizations').then(r=>r.json()).then(d=>setOrganizations(d.organizations||[])).catch(()=>{})},[currentRole])
   useEffect(() => {
     const timer = window.setTimeout(() => load(1), 0)
-    return () => window.clearTimeout(timer)
+    return () => {window.clearTimeout(timer);requestSequence.current++}
   }, [load])
+  useEffect(()=>{const timer=window.setInterval(()=>load(page,true),12000);return()=>window.clearInterval(timer)},[load,page])
 
   const statusColor: Record<string, string> = { TRIP_CREATED: '#6B7280', DRIVER_STARTED_ROUTE: '#3B82F6', BUS_EN_ROUTE: '#F59E0B', TRIP_COMPLETED: '#10B981' }
   const remove=async(id:string)=>{if(!confirm('Remove this trip from your history view? The transport audit record will be preserved.'))return;const response=await fetch('/api/trips/history',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});if(response.ok)setTrips(items=>items.filter(item=>item.id!==id))}
@@ -38,6 +43,7 @@ export default function TripHistoryTab({currentRole}:{currentRole:string}) {
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
       <div className="glass-panel" style={{ padding: '2rem' }}>
+        {loadError&&<div role="alert" className="import-issues"><TranslatedText text="Trip history could not refresh"/>: <TranslatedText text={loadError}/></div>}
         <div style={{display:'flex',justifyContent:'space-between',gap:12,alignItems:'center',marginBottom:'1.5rem'}}><h3 style={{ margin:0, fontSize: '1.3rem' }}><TranslatedText text={"Trip History"}/></h3>{currentRole==='SUPER_ADMIN'&&<select className="select-field" style={{width:220}} value={organizationId} onChange={e=>setOrganizationId(e.target.value)}><option value="">All schools</option>{organizations.map(org=><option key={org.id} value={org.id}>{org.name}</option>)}</select>}</div>
 
         {loading ? (

@@ -2,6 +2,7 @@ import { NextResponse, NextRequest } from "next/server";
 import prisma from "@/lib/prisma";
 import { getUserFromSession } from "@/lib/auth";
 import { canAccessOrganization, getCurrentUser } from "@/lib/authorization";
+import {ARCHIVE_MIGRATION_ERROR,isArchiveTableMissing} from '@/lib/attendance-archive'
 import {
   nextAttendanceAction,
   distanceKm,
@@ -57,6 +58,7 @@ export async function GET(request: NextRequest) {
 
     const selectedRoute = routeId ? await prisma.route.findFirst({where:{id:routeId,organizationId},select:{name:true}}) : null;
     if(routeId&&!selectedRoute)return NextResponse.json({error:"Route not found in this school"},{status:404});
+    let archiveAvailable=true;
     const [trips,archived] = await Promise.all([prisma.trip.findMany({
       where: {
         date: { gte: dayStart, lt: dayEnd },
@@ -82,6 +84,10 @@ export async function GET(request: NextRequest) {
       where:{organizationId,date:{gte:dayStart,lt:dayEnd},...(selectedRoute?{routeName:{equals:selectedRoute.name,mode:'insensitive' as const}}:{})},
       orderBy:{createdAt:'desc'},take:1000,
       select:{id:true,date:true,session:true,status:true,studentName:true,studentCode:true,matchedStudentId:true,routeName:true,busLabel:true,time:true,sourceFile:true},
+    }).catch(error=>{
+      if(!isArchiveTableMissing(error))throw error;
+      archiveAvailable=false;
+      return [];
     })]);
 
     const routeIds = [...new Set(trips.map((t) => t.routeId))];
@@ -185,7 +191,7 @@ export async function GET(request: NextRequest) {
       };
     });
 
-    return NextResponse.json({ trips: result, archived, date: dateParam });
+    return NextResponse.json({ trips: result, archived, archiveAvailable,archiveError:archiveAvailable?null:ARCHIVE_MIGRATION_ERROR,date: dateParam },{headers:{'Cache-Control':'no-store'}});
   } catch (error) {
     console.error("Attendance GET Error:", error);
     return NextResponse.json(

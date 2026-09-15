@@ -1858,5 +1858,8 @@
   "Drop-off": { "ms": "Turun bas", "zh": "下车" },
   "Parent confirmations": { "ms": "Pengesahan ibu bapa", "zh": "家长确认" },
   "Select a school": { "ms": "Pilih sekolah", "zh": "选择学校" },
-  "Mark all read": { "ms": "Tandakan semua telah dibaca", "zh": "全部标记为已读" }
+  "Mark all read": { "ms": "Tandakan semua telah dibaca", "zh": "全部标记为已读" },
+  "Attendance could not refresh": { "ms": "Kehadiran tidak dapat dikemas kini", "zh": "出勤记录无法刷新" },
+  "Historical uploads unavailable until the database update": { "ms": "Muat naik rekod lama memerlukan kemas kini pangkalan data", "zh": "历史记录上传需要先更新数据库" },
+  "Trip history could not refresh": { "ms": "Sejarah perjalanan tidak dapat dikemas kini", "zh": "行程历史无法刷新" }
 }
