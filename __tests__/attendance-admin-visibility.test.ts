@@ -32,7 +32,7 @@ test('school admin sees the driver trip and live boarding even if the historical
   const body=await response.json()
   expect(response.status).toBe(200)
   expect(body.archiveAvailable).toBe(false)
-  expect(body.archiveError).toContain('migrate deploy')
+  expect(body.archiveError).toContain('npm run db:migrate')
   expect(body.trips[0]).toMatchObject({tripId:'trip-1',routeName:'Route A',roster:[{studentId:'child',status:'PICKED_UP'}]})
   expect(prisma.trip.findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({routeId:'route-a',route:{organizationId:'school-a'}})}))
 })
@@ -41,4 +41,27 @@ test('genuine archive query failures are not hidden as an empty trip page',async
   mock(prisma.attendanceImportRecord.findMany).mockRejectedValue({code:'P2021',meta:{modelName:'DifferentModel',table:'public.OtherTable'}})
   const response=await GET(new NextRequest('http://localhost/api/attendance?date=2026-09-15'))
   expect(response.status).toBe(500)
+})
+
+test('crew-verified boarding takes precedence over a later spreadsheet correction',async()=>{
+  mock(prisma.trip.findMany).mockResolvedValue([{
+    id:'trip-1',date:new Date('2026-09-15T02:00:00+08:00'),serviceType:'MORNING',status:'TRIP_COMPLETED',routeId:'route-a',busId:'bus-a',
+    route:{id:'route-a',name:'Route A'},driver:{id:'driver-1',name:'Bus Driver'},bus:{plateNumber:'BUS-001'},attendanceRequests:[],
+    attendances:[
+      {id:'crew-1',studentId:'child',dedupeKey:'trip-1:child:PICKED_UP',action:'PICKED_UP',timestamp:new Date('2026-09-15T02:30:00+08:00'),student:{id:'child',name:'Amy Student',grade:'Year 2',studentCode:'STU-1'}},
+      {id:'import-1',studentId:'child',dedupeKey:'attendance-import:trip-1:child',action:'ABSENT',timestamp:new Date('2026-09-15T05:00:00+08:00'),student:{id:'child',name:'Amy Student',grade:'Year 2',studentCode:'STU-1'}},
+    ],
+  }])
+  const response=await GET(new NextRequest('http://localhost/api/attendance?date=2026-09-15'))
+  const body=await response.json()
+  expect(body.trips[0].roster[0]).toMatchObject({status:'PICKED_UP',source:'CREW_VERIFIED'})
+})
+
+test('uploaded school history remains visible on its date even with no recorded trip',async()=>{
+  mock(prisma.trip.findMany).mockResolvedValue([])
+  mock(prisma.attendanceImportRecord.findMany).mockResolvedValue([{id:'archive-1',studentName:'Amy Student',status:'ABSENT',date:new Date('2026-09-15T00:00:00+08:00')}])
+  const response=await GET(new NextRequest('http://localhost/api/attendance?date=2026-09-15'))
+  const body=await response.json()
+  expect(body).toMatchObject({trips:[],archived:[{id:'archive-1',status:'ABSENT'}]})
+  expect(prisma.attendanceImportRecord.findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({organizationId:'school-a'})}))
 })

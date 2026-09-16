@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import {crewAttendanceFilter} from '@/lib/attendance-import-source'
 import { getCurrentUser } from "@/lib/authorization";
 import {
   crewWhere,
@@ -53,7 +54,7 @@ export async function GET(request: NextRequest) {
             status: { in: ACTIVE_TRIP_STATUSES },
           },
           include: {
-            attendances: { orderBy: { timestamp: "asc" } },
+            attendances: { where:crewAttendanceFilter,orderBy: { timestamp: "asc" } },
             attendanceRequests: {
               where: { status: "PENDING" },
               select: {

@@ -7,7 +7,7 @@ import { Trash2 } from 'lucide-react'
 
 interface TripRecord {
   id: string; date: string; status: string; routeName: string; driverName: string
-  attendanceCount: number; pickedUp: number; droppedOff: number; absent: number; avgRating: string | null
+  attendanceCount: number; pickedUp: number; droppedOff: number; absent: number; importedAttendanceCount?:number; avgRating: string | null
   organization?: {id:string;name:string}
   parentConfirmations: {studentId:string;studentName:string;action:string;status:string;requestedAt:string|null}[]
 }
@@ -35,7 +35,7 @@ export default function TripHistoryTab({currentRole}:{currentRole:string}) {
     const timer = window.setTimeout(() => load(1), 0)
     return () => {window.clearTimeout(timer);requestSequence.current++}
   }, [load])
-  useEffect(()=>{const timer=window.setInterval(()=>load(page,true),12000);return()=>window.clearInterval(timer)},[load,page])
+  useEffect(()=>{const timer=window.setInterval(()=>load(page,true),12000);const onFocus=()=>load(page,true);window.addEventListener('focus',onFocus);return()=>{window.clearInterval(timer);window.removeEventListener('focus',onFocus)}},[load,page])
 
   const statusColor: Record<string, string> = { TRIP_CREATED: '#6B7280', DRIVER_STARTED_ROUTE: '#3B82F6', BUS_EN_ROUTE: '#F59E0B', TRIP_COMPLETED: '#10B981' }
   const remove=async(id:string)=>{if(!confirm('Remove this trip from your history view? The transport audit record will be preserved.'))return;const response=await fetch('/api/trips/history',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});if(response.ok)setTrips(items=>items.filter(item=>item.id!==id))}
@@ -65,6 +65,7 @@ export default function TripHistoryTab({currentRole}:{currentRole:string}) {
                     <span>{trip.pickedUp}<TranslatedText text={" picked"}/></span>
                     <span>{trip.droppedOff}<TranslatedText text={" dropped"}/></span>
                     <span>{trip.absent}<TranslatedText text={" absent"}/></span>
+                    {Boolean(trip.importedAttendanceCount)&&<span>{trip.importedAttendanceCount} <TranslatedText text="school-imported records"/></span>}
                     {trip.avgRating && <span>⭐ <TranslatedText text={trip.avgRating}/></span>}
                   </div>
                 </div>

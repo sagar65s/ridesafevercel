@@ -12,6 +12,7 @@ interface RosterEntry {
   status: 'PICKED_UP' | 'DROPPED_OFF' | 'ABSENT' | 'NOT_MARKED'
   attendanceId: string | null; timestamp: string | null
   parentPickupStatus: string; parentDropoffStatus: string
+  source?:'SCHOOL_IMPORT'|'CREW_VERIFIED'|'NOT_MARKED'
 }
 
 interface TripAttendance {
@@ -57,6 +58,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   const [importing,setImporting]=useState(false)
   const [importIssues,setImportIssues]=useState<{row:number;error:string}[]>([])
   const [importWarnings,setImportWarnings]=useState<{row:number;error:string}[]>([])
+  const [visibleArchiveRows,setVisibleArchiveRows]=useState(100)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast(msg); setToastType(type); setTimeout(() => setToast(''), 3000)
@@ -77,13 +79,14 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
       .catch(error=>{if(requestId!==loadSequence.current)return;setLoadError(error instanceof Error?error.message:'Unable to load school attendance');if(!silent){setTrips([]);setArchived([])}setLoading(false)})
   }, [date, routeId,currentRole,organizationId])
 
-  useEffect(() => { const timer = setTimeout(()=>load(), 0);const refresh=window.setInterval(()=>load(true),10000);return () => {clearTimeout(timer);window.clearInterval(refresh);loadSequence.current++} }, [load])
+  useEffect(() => { const timer = setTimeout(()=>load(), 0);const refresh=window.setInterval(()=>load(true),10000);const onFocus=()=>load(true);window.addEventListener('focus',onFocus);return () => {clearTimeout(timer);window.clearInterval(refresh);window.removeEventListener('focus',onFocus);loadSequence.current++} }, [load])
+  useEffect(()=>{const timer=setTimeout(()=>setVisibleArchiveRows(100),0);return()=>clearTimeout(timer)},[date,organizationId,routeId])
 
   const exportCSV = () => {
     const rows = [['Date','Session','Route','Bus','Driver','Student','Student ID','Grade','Status','Time','Parent boarding confirmation','Parent drop-off confirmation','Source']]
     trips.forEach(t => t.roster.forEach(s => rows.push([
       formatRideSafeDate(t.date),t.serviceType,t.routeName,t.busPlate||'',t.driverName,s.name,s.studentCode||'',s.grade,STATUS_META[s.status].label,
-      s.timestamp ? formatRideSafeTime(s.timestamp) : '',s.parentPickupStatus,s.parentDropoffStatus,'RIDESAFE'
+      s.timestamp ? formatRideSafeTime(s.timestamp) : '',s.parentPickupStatus,s.parentDropoffStatus,s.source==='SCHOOL_IMPORT'?'SCHOOL_IMPORT':'RIDESAFE'
     ])))
     archived.forEach(item=>rows.push([formatRideSafeDate(item.date),item.session,item.routeName||'',item.busLabel||'', '',item.studentName,item.studentCode||'','',item.status,item.time||'','','','UPLOADED_HISTORY']))
     const csv = rows.map(r => r.map(csvCell).join(',')).join('\n')
@@ -96,17 +99,17 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
     if(!importFile)return showToast('Choose an Excel or CSV attendance file','error')
     if(currentRole==='SUPER_ADMIN'&&!organizationId)return showToast('Select a school before importing attendance','error')
     const body=new FormData();body.append('file',importFile);body.append('organizationId',organizationId);setImporting(true);setImportIssues([]);setImportWarnings([])
-    try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');setImportIssues(result.errors||[]);setImportWarnings(result.warnings||[]);showToast(`${result.created} trip records; ${result.archived||0} historical rows; ${result.skipped} skipped; ${result.duplicates||0} already recorded`,result.created||result.archived?'success':'error');setImportFile(null);if(result.archiveDate){setRouteId('');setDate(result.archiveDate);if(result.archiveDate===date&&!routeId)load()}else load()}
+    try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');setImportIssues(result.errors||[]);setImportWarnings(result.warnings||[]);showToast(`${result.created} trip records added; ${result.updated||0} updated; ${result.archived||0} historical added; ${result.archivedUpdated||0} historical updated; ${result.skipped} skipped; ${result.duplicates||0} unchanged`,result.skipped?'error':'success');setImportFile(null);if(result.viewDate){setRouteId('');setDate(result.viewDate);if(result.viewDate===date&&!routeId)load()}else load()}
     catch(error){showToast(error instanceof Error?error.message:'Attendance import failed','error')}finally{setImporting(false)}
   }
 
   const allRoster = trips.flatMap(t => t.roster)
   const summary = {
-    total: allRoster.length,
-    pickedUp: allRoster.filter(s => s.status === 'PICKED_UP').length,
-    droppedOff: allRoster.filter(s => s.status === 'DROPPED_OFF').length,
-    absent: allRoster.filter(s => s.status === 'ABSENT').length,
-    notMarked: allRoster.filter(s => s.status === 'NOT_MARKED').length,
+    total: allRoster.length+archived.length,
+    pickedUp: allRoster.filter(s => s.status === 'PICKED_UP').length+archived.filter(s=>s.status==='PICKED_UP').length,
+    droppedOff: allRoster.filter(s => s.status === 'DROPPED_OFF').length+archived.filter(s=>s.status==='DROPPED_OFF').length,
+    absent: allRoster.filter(s => s.status === 'ABSENT').length+archived.filter(s=>s.status==='ABSENT').length,
+    notMarked: allRoster.filter(s => s.status === 'NOT_MARKED').length+archived.filter(s=>s.status==='NOT_MARKED').length,
   }
 
   const routesWithTrip = new Set(trips.map(t => t.routeId))
@@ -136,7 +139,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
             <h3 style={{ margin: 0, fontSize: '1.25rem', display: 'flex', alignItems: 'center', gap: 8 }}>
               <CalendarDays size={20} color="var(--primary)" /><TranslatedText text={" Attendance "}/></h3>
             <div style={{ fontSize: '0.83rem', color: 'var(--text-muted)', marginTop: 4 }}>
-              {summary.total}<TranslatedText text={" students across "}/>{trips.length}<TranslatedText text={" trip"}/><TranslatedText text={trips.length !== 1 ? 's' : ''}/><TranslatedText text={" on "}/>{formatRideSafeDate(`${date}T00:00:00+08:00`)}
+              {allRoster.length}<TranslatedText text=" trip students"/> · {archived.length}<TranslatedText text=" uploaded historical rows"/> · {trips.length}<TranslatedText text={" trip"}/><TranslatedText text={trips.length !== 1 ? 's' : ''}/><TranslatedText text={" on "}/>{formatRideSafeDate(`${date}T00:00:00+08:00`)}
             </div>
           </div>
           <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center' }}>
@@ -175,6 +178,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
             </div>
           ))}
         </div>
+        {archived.length>0&&<p style={{fontSize:'0.8rem',color:'var(--text-muted)',marginTop:12}}><TranslatedText text="Totals include uploaded school history; imported rows are not driver-confirmed boarding or drop-off."/></p>}
 
         {routesMissing.length > 0 && (
           <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--text-muted)', background: 'var(--surface-2)', borderRadius: 8, padding: '0.6rem 0.9rem' }}><TranslatedText text={" No trip recorded on "}/>{formatRideSafeDate(`${date}T00:00:00+08:00`)}<TranslatedText text={" for: "}/>{routesMissing.map(r => r.name).join(', ')}
@@ -187,11 +191,11 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
         <div style={{ display: 'grid', gap: 12 }}>
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 120, borderRadius: 12 }} />)}
         </div>
-      ) : trips.length === 0 && archived.length === 0 ? (
+      ) : trips.length === 0 ? (
         <div className="glass-panel" style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)' }}>
           <CalendarDays size={40} style={{ opacity: 0.25, marginBottom: '1rem' }} />
           <div style={{ fontWeight: 600, marginBottom: 4 }}><TranslatedText text={"No trips on this date"}/></div>
-          <div style={{ fontSize: '0.85rem' }}><TranslatedText text={"Pick another date, or a route with a completed run."}/></div>
+          <div style={{ fontSize: '0.85rem' }}><TranslatedText text={archived.length?'Uploaded school history for this date appears below.':'Pick another date, or a route with a completed run.'}/></div>
         </div>
       ) : (
         <div style={{ display: 'grid', gap: '1.25rem' }}>
@@ -226,6 +230,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
                         <span style={{ padding: '3px 10px', borderRadius: 999, fontSize: '0.72rem', fontWeight: 600, color: meta.color, background: meta.bg }}>
                           <TranslatedText text={meta.label}/>
                         </span>
+                        {entry.source==='SCHOOL_IMPORT'&&<small><TranslatedText text="School import (not crew confirmed)"/></small>}
 
                       </div>
                     </div>
@@ -242,12 +247,13 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
       {!loading&&archived.length>0&&<section className="glass-panel historical-attendance" style={{padding:'1.5rem',marginTop:'1.25rem'}}>
         <h3><Upload size={19}/>{translateUi('Uploaded historical attendance')}</h3>
         <p>{translateUi('These rows have no verified live trip or bus assignment. They are kept for the school history, not treated as crew-confirmed boarding.')}</p>
-        <div className="historical-attendance-rows">{archived.map(item=><article key={item.id}>
+        <div className="historical-attendance-rows">{archived.slice(0,visibleArchiveRows).map(item=><article key={item.id}>
           <strong data-no-translate>{item.studentName}</strong>
-          <span>{translateUi(item.status.replaceAll('_',' '))} · {formatRideSafeDate(item.date)}{item.time?` · ${item.time}`:''}</span>
+          <span style={{color:STATUS_META[item.status]?.color||'var(--text-main)',fontWeight:700}}>{translateUi(item.status.replaceAll('_',' '))} · {formatRideSafeDate(item.date)}{item.time?` · ${item.time}`:''}</span>
           <small data-no-translate>{item.session} · {item.routeName||'—'} · {item.busLabel||'—'}</small>
           <small>{item.matchedStudentId?translateUi('Student ID matched during import'):translateUi('Student assignment not verified')} · <span data-no-translate>{item.sourceFile}</span></small>
         </article>)}</div>
+        {archived.length>visibleArchiveRows&&<button className="btn" onClick={()=>setVisibleArchiveRows(value=>value+100)}><TranslatedText text="Show more uploaded records"/> ({archived.length-visibleArchiveRows})</button>}
       </section>}
     </motion.div>
   )

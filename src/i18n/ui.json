@@ -1861,5 +1861,12 @@
   "Mark all read": { "ms": "Tandakan semua telah dibaca", "zh": "全部标记为已读" },
   "Attendance could not refresh": { "ms": "Kehadiran tidak dapat dikemas kini", "zh": "出勤记录无法刷新" },
   "Historical uploads unavailable until the database update": { "ms": "Muat naik rekod lama memerlukan kemas kini pangkalan data", "zh": "历史记录上传需要先更新数据库" },
-  "Trip history could not refresh": { "ms": "Sejarah perjalanan tidak dapat dikemas kini", "zh": "行程历史无法刷新" }
+  "Trip history could not refresh": { "ms": "Sejarah perjalanan tidak dapat dikemas kini", "zh": "行程历史无法刷新" },
+  "trip students": { "ms": "pelajar dalam perjalanan", "zh": "行程学生" },
+  "uploaded historical rows": { "ms": "rekod sejarah yang dimuat naik", "zh": "已上传历史记录" },
+  "Totals include uploaded school history; imported rows are not driver-confirmed boarding or drop-off.": { "ms": "Jumlah termasuk rekod sejarah sekolah yang dimuat naik; rekod import bukan pengesahan naik atau turun bas oleh petugas.", "zh": "总数包含已上传的学校历史记录；导入记录不代表司机已确认上车或下车。" },
+  "Uploaded school history for this date appears below.": { "ms": "Rekod sejarah sekolah untuk tarikh ini dipaparkan di bawah.", "zh": "此日期的学校历史记录显示在下方。" },
+  "School import (not crew confirmed)": { "ms": "Import sekolah (belum disahkan petugas)", "zh": "学校导入（未经乘务人员确认）" },
+  "Show more uploaded records": { "ms": "Tunjuk lebih banyak rekod dimuat naik", "zh": "显示更多已上传记录" },
+  "school-imported records": { "ms": "rekod import sekolah", "zh": "学校导入记录" }
 }

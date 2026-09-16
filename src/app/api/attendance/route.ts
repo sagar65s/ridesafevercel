@@ -3,6 +3,7 @@ import prisma from "@/lib/prisma";
 import { getUserFromSession } from "@/lib/auth";
 import { canAccessOrganization, getCurrentUser } from "@/lib/authorization";
 import {ARCHIVE_MIGRATION_ERROR,isArchiveTableMissing} from '@/lib/attendance-archive'
+import {isImportedAttendance,crewAttendanceFilter} from '@/lib/attendance-import-source'
 import {
   nextAttendanceAction,
   distanceKm,
@@ -82,7 +83,7 @@ export async function GET(request: NextRequest) {
       },
     }),prisma.attendanceImportRecord.findMany({
       where:{organizationId,date:{gte:dayStart,lt:dayEnd},...(selectedRoute?{routeName:{equals:selectedRoute.name,mode:'insensitive' as const}}:{})},
-      orderBy:{createdAt:'desc'},take:1000,
+      orderBy:{createdAt:'desc'},take:5000,
       select:{id:true,date:true,session:true,status:true,studentName:true,studentCode:true,matchedStudentId:true,routeName:true,busLabel:true,time:true,sourceFile:true},
     }).catch(error=>{
       if(!isArchiveTableMissing(error))throw error;
@@ -135,7 +136,10 @@ export async function GET(request: NextRequest) {
     const result = trips.map((t) => {
       // Latest attendance record per student (in case of duplicate taps)
       const latestByStudent = new Map<string, (typeof t.attendances)[number]>();
-      for (const a of t.attendances) latestByStudent.set(a.studentId, a);
+      for (const a of t.attendances) {
+        const previous=latestByStudent.get(a.studentId)
+        if(!previous||isImportedAttendance(previous)||!isImportedAttendance(a))latestByStudent.set(a.studentId,a)
+      }
 
       const roster = (rosterByRoute.get(t.routeId) || [])
         .filter(
@@ -158,6 +162,7 @@ export async function GET(request: NextRequest) {
             status: a?.action || "NOT_MARKED",
             attendanceId: a?.id || null,
             timestamp: a?.timestamp || null,
+            source:a?isImportedAttendance(a)?'SCHOOL_IMPORT':'CREW_VERIFIED':'NOT_MARKED',
             parentPickupStatus: parentPickup?.status || "NOT_SUBMITTED",
             parentDropoffStatus: parentDropoff?.status || "NOT_SUBMITTED",
           };
@@ -173,6 +178,7 @@ export async function GET(request: NextRequest) {
             status: a.action,
             attendanceId: a.id,
             timestamp: a.timestamp,
+            source:isImportedAttendance(a)?'SCHOOL_IMPORT':'CREW_VERIFIED',
             parentPickupStatus: t.attendanceRequests.find((r) => r.studentId === studentId && r.action === "PICKED_UP")?.status || "NOT_SUBMITTED",
             parentDropoffStatus: t.attendanceRequests.find((r) => r.studentId === studentId && r.action === "DROPPED_OFF")?.status || "NOT_SUBMITTED",
           });
@@ -255,7 +261,7 @@ export async function POST(request: NextRequest) {
       if (!["DRIVER_STARTED_ROUTE", "BUS_EN_ROUTE"].includes(trip.status))
         throw new AttendanceError("This trip is closed");
       const history = await tx.attendance.findMany({
-        where: { tripId: trip.id, studentId: student.id },
+        where: { tripId: trip.id, studentId: student.id, ...crewAttendanceFilter },
         orderBy: { timestamp: "asc" },
       });
       const previous = history.find((item) => item.action === data.action);
