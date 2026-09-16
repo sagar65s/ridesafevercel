@@ -5,6 +5,7 @@ import { MessageSquare, Search, Send, Trash2 } from 'lucide-react'
 import { useTranslation } from '@/i18n/provider'
 import { api, Empty, Person } from '@/components/transport/shared'
 import { formatRideSafeDateTime } from '@/lib/date-format'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 type ChatMessage = {
   id:string
@@ -28,6 +29,8 @@ export default function MessagesTab() {
   const [query,setQuery]=useState('')
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
+  const [pendingDeleteId,setPendingDeleteId]=useState<string|null>(null)
+  const [deleting,setDeleting]=useState(false)
 
   const load=useCallback(async()=>{
     try {
@@ -63,8 +66,8 @@ export default function MessagesTab() {
     finally{setBusy(false)}
   }
   const remove=async(id:string)=>{
-    if(!window.confirm(tx('Delete this item?')))return
-    try{await api('/api/messages',{id},'DELETE');setMessages(items=>items.filter(item=>item.id!==id))}catch(cause){setError(cause instanceof Error?cause.message:'Delete failed')}
+    setDeleting(true)
+    try{await api('/api/messages',{id},'DELETE');setMessages(items=>items.filter(item=>item.id!==id));setPendingDeleteId(null)}catch(cause){setError(cause instanceof Error?cause.message:'Delete failed')}finally{setDeleting(false)}
   }
   const roleLabel=(role?:string)=>role==='SCHOOL_ADMIN'?'School Admin':role==='ADMIN'?'Admin':role==='PARENT'?'Parent':role==='DRIVER'?'Driver / Maintainer':'Super Admin'
 
@@ -80,9 +83,10 @@ export default function MessagesTab() {
       </aside>
       <section className="chat-thread">
         <header><strong>{active?<span data-no-translate>{active.name}</span>:tx('Choose a chat')}</strong>{active&&<span>{tx(roleLabel(active.role))}</span>}</header>
-        <div className="message-list">{thread.map(item=><div key={item.id} className={`message-bubble ${item.sender.id===me?.id?'mine':''}`}><strong>{item.sender.id===me?.id?tx('You'):tx(`${roleLabel(item.sender.role)} reply`)}</strong><p data-no-translate>{item.content}</p><time>{formatRideSafeDateTime(item.createdAt)}</time><button className="icon-button" aria-label={tx('Delete')} onClick={()=>void remove(item.id)}><Trash2 size={14}/></button></div>)}{active&&!thread.length&&<Empty text="No messages yet"/>}</div>
+        <div className="message-list">{thread.map(item=><div key={item.id} className={`message-bubble ${item.sender.id===me?.id?'mine':''}`}><strong>{item.sender.id===me?.id?tx('You'):tx(`${roleLabel(item.sender.role)} reply`)}</strong><p data-no-translate>{item.content}</p><time>{formatRideSafeDateTime(item.createdAt)}</time><button className="icon-button" aria-label={tx('Delete')} onClick={()=>setPendingDeleteId(item.id)}><Trash2 size={14}/></button></div>)}{active&&!thread.length&&<Empty text="No messages yet"/>}</div>
         <form className="message-compose" onSubmit={send}><input value={text} onChange={event=>setText(event.target.value)} maxLength={2000} required placeholder={tx('Type a message')}/><button className="transport-primary" disabled={busy||!selected}><Send size={17}/>{tx('Send')}</button></form>
       </section>
     </div>
+    <ConfirmDialog open={Boolean(pendingDeleteId)} title="Delete message?" description="This message will be removed from your chat view." confirmLabel="Delete message" busy={deleting} onCancel={()=>{if(!deleting)setPendingDeleteId(null)}} onConfirm={()=>{if(pendingDeleteId)void remove(pendingDeleteId)}}/>
   </div>
 }

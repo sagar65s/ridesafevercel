@@ -39,6 +39,7 @@ import {
 import { transportMessage } from "@/lib/transport-copy";
 import CalendarCard from "@/components/CalendarCard";
 import ParentCalendar from "@/components/transport/ParentCalendar";
+import ConfirmDialog from "@/components/ConfirmDialog";
 const BusMap = dynamic(() => import("@/components/BusMap"), { ssr: false });
 const tabs = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -135,6 +136,7 @@ export default function ParentDashboard() {
     [pushEnabled, setPushEnabled] = useState(false);
   const [issue, setIssue] = useState({ subject: "", description: "" }),
     [arrival, setArrival] = useState("");
+  const [pendingDelete,setPendingDelete]=useState<{type:'NOTIFICATION'|'MESSAGE'|'HISTORY';id:string}|null>(null)
   const loading = useRef(false);
   const load = useCallback(async () => {
     if (!me || loading.current) return;
@@ -782,7 +784,7 @@ export default function ParentDashboard() {
                       {tx("Mark read")}
                     </button>
                   )}
-                  <button className="icon-button" aria-label={tx("Delete")} onClick={() => { if (confirm(tx("Delete this item?"))) void run(async()=>{await api('/api/notifications',{id:n.id},'DELETE');setNotices(items=>items.filter(item=>item.id!==n.id))}) }}><Trash2 size={15}/></button>
+                  <button className="icon-button" aria-label={tx("Delete")} onClick={() => setPendingDelete({type:'NOTIFICATION',id:n.id})}><Trash2 size={15}/></button>
                 </article>
               ))}
             </section>
@@ -804,13 +806,7 @@ export default function ParentDashboard() {
                     <button
                       className="icon-button"
                       aria-label={tx("Delete")}
-                      onClick={() => {
-                        if (confirm(tx("Delete this item?")))
-                          void run(async () => {
-                            await api("/api/messages", { id: m.id }, "DELETE");
-                            setMessages(messages.filter((x) => x.id !== m.id));
-                          });
-                      }}
+                      onClick={() => setPendingDelete({type:'MESSAGE',id:m.id})}
                     >
                       <Trash2 size={15} />
                     </button>
@@ -983,7 +979,7 @@ export default function ParentDashboard() {
               {history.map((trip) => (
                 <article className="history-entry" key={trip.id}>
                   <h3 data-no-translate>{trip.routeName}</h3>
-                  <button className="history-delete" onClick={()=>void run(async()=>{await api('/api/trips/history',{id:trip.id},'DELETE');setHistory(items=>items.filter(item=>item.id!==trip.id))})}><Trash2 size={15}/>{tx('Delete from history')}</button>
+                  <button className="history-delete" onClick={()=>setPendingDelete({type:'HISTORY',id:trip.id})}><Trash2 size={15}/>{tx('Delete from history')}</button>
                   {trip.attendance.map((a, index) => (
                     <div className="attendance-history" key={index}>
                       <strong data-no-translate>{a.studentName}</strong>
@@ -1005,6 +1001,7 @@ export default function ParentDashboard() {
           )}
         </div>
       </div>
+      <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete?.type==='MESSAGE'?'Delete message?':pendingDelete?.type==='NOTIFICATION'?'Delete notification?':'Remove trip from history?'} description={pendingDelete?.type==='HISTORY'?"This hides the trip from your history view; the school's transport record is preserved.":'This item will be permanently removed from your account view.'} confirmLabel={pendingDelete?.type==='HISTORY'?'Remove from history':'Delete'} busy={busy} onCancel={()=>{if(!busy)setPendingDelete(null)}} onConfirm={()=>{if(!pendingDelete)return;void run(async()=>{if(pendingDelete.type==='MESSAGE'){await api('/api/messages',{id:pendingDelete.id},'DELETE');setMessages(items=>items.filter(item=>item.id!==pendingDelete.id))}else if(pendingDelete.type==='NOTIFICATION'){await api('/api/notifications',{id:pendingDelete.id},'DELETE');setNotices(items=>items.filter(item=>item.id!==pendingDelete.id))}else{await api('/api/trips/history',{id:pendingDelete.id},'DELETE');setHistory(items=>items.filter(item=>item.id!==pendingDelete.id))}setPendingDelete(null)})}}/>
     </Workspace>
   );
 }

@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { CheckCircle, AlertTriangle, UserPlus, Bus, AlertCircle, Pencil, Trash2 } from 'lucide-react'
 import { formatRideSafeDate } from '@/lib/date-format'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface User { id: string; name: string; email: string; role: string; phone?: string; buses?: { plateNumber: string }[]; organizationId?: string; isActive:boolean; personnelType?:string; licenseNumber?:string; licenseExpiry?:string; onboardingDate?:string; offboardingDate?:string; offboardingReason?:string; employmentStatus?:string; assignmentHistory?:{id:string;action:string;reason?:string;effectiveAt:string;bus?:{plateNumber:string};route?:{name:string}}[] }
 interface Org { id: string; name: string }
@@ -68,6 +69,7 @@ export default function UsersTab({ superAdminView = false, searchQuery = '' }: {
   const [orgs, setOrgs] = useState<Org[]>([])
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pendingDeactivate,setPendingDeactivate]=useState<User|null>(null)
 
   const loadUsers = () => {
     Promise.all([
@@ -136,12 +138,12 @@ export default function UsersTab({ superAdminView = false, searchQuery = '' }: {
   }
 
   const handleDelete = async (u: User) => {
-    if (!confirm(`Deactivate "${u.name}"? Historical transport records will be preserved.`)) return
     setDeletingId(u.id)
     try {
       const res = await fetch(`/api/admin/users/${u.id}`, { method: 'DELETE' })
       if (res.ok) {
         showToast('User deactivated; history preserved')
+        setPendingDeactivate(null)
         loadUsers()
       } else {
         const err = await res.json()
@@ -289,7 +291,7 @@ export default function UsersTab({ superAdminView = false, searchQuery = '' }: {
                   style={{ background: 'none', border: '1px solid var(--surface-border)', borderRadius: 8, padding: '4px 7px', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}>
                   <Pencil size={13} />
                 </motion.button>
-                <motion.button whileTap={{ scale: 0.92 }} onClick={() => handleDelete(u)}
+                <motion.button whileTap={{ scale: 0.92 }} onClick={() => setPendingDeactivate(u)}
                   title={translateUi("Deactivate user")} disabled={deletingId === u.id || !u.isActive}
                   style={{ background: 'none', border: '1px solid rgba(255,69,58,0.3)', borderRadius: 8, padding: '4px 7px', cursor: 'pointer', color: 'var(--danger)', display: 'flex' }}>
                   <Trash2 size={13} />
@@ -422,6 +424,7 @@ export default function UsersTab({ superAdminView = false, searchQuery = '' }: {
           </motion.div>
         )}
       </AnimatePresence>
+      <ConfirmDialog open={Boolean(pendingDeactivate)} title="Deactivate user?" description="The account will be disabled while historical transport records remain available." confirmLabel="Deactivate user" busy={Boolean(deletingId)} onCancel={()=>{if(!deletingId)setPendingDeactivate(null)}} onConfirm={()=>{if(pendingDeactivate)void handleDelete(pendingDeactivate)}}/>
     </motion.div>
   )
 }

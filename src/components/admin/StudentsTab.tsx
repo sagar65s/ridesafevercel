@@ -8,6 +8,7 @@ import { CheckCircle, AlertTriangle, UserPlus, Bus, Check, X, Download, Upload, 
 import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { formatRideSafeDateTime } from '@/lib/date-format'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface Student {
   id: string; name: string; grade: string; level: string;
@@ -75,6 +76,7 @@ export default function StudentsTab({ searchQuery = '' }: { searchQuery?: string
   const [toastType, setToastType] = useState<'success'|'error'>('success')
   const [editingStudent, setEditingStudent] = useState<Student | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pendingDelete,setPendingDelete]=useState<Student|null>(null)
   const [importFile,setImportFile]=useState<File|null>(null)
   const [importOrganizationId,setImportOrganizationId]=useState('')
   const [importing,setImporting]=useState(false)
@@ -177,12 +179,11 @@ export default function StudentsTab({ searchQuery = '' }: { searchQuery?: string
   }
 
   const handleDelete = async (s: Student) => {
-    if (!confirm(`Permanently delete "${s.name}"? This cannot be undone. Students with attendance or other historical records cannot be deleted.`)) return
     setDeletingId(s.id)
     try {
       const res = await fetch(`/api/students/${s.id}`, { method: 'DELETE' })
       if (res.ok) {
-        showToast('Student permanently deleted', 'success'); loadStudents()
+        showToast('Student permanently deleted', 'success');setPendingDelete(null);loadStudents()
       } else {
         const e = await res.json(); showToast(e.error || 'Failed to delete student', 'error')
       }
@@ -343,7 +344,7 @@ export default function StudentsTab({ searchQuery = '' }: { searchQuery?: string
                   style={{ background:'none', border:'1px solid var(--surface-border)', borderRadius:8, padding:'4px 7px', cursor:'pointer', color:'var(--text-muted)', display:'flex' }}>
                   <Pencil size={13} />
                 </motion.button>
-                <motion.button whileTap={{ scale:0.92 }} onClick={() => handleDelete(s)}
+                <motion.button whileTap={{ scale:0.92 }} onClick={() => setPendingDelete(s)}
                   title={translateUi("Deactivate student")} disabled={deletingId === s.id || !s.isActive}
                   style={{ background:'none', border:'1px solid rgba(255,69,58,0.3)', borderRadius:8, padding:'4px 7px', cursor:'pointer', color:'var(--danger)', display:'flex' }}>
                   <Trash2 size={13} />
@@ -504,6 +505,7 @@ export default function StudentsTab({ searchQuery = '' }: { searchQuery?: string
           </motion.div>
         )}
       </AnimatePresence>
+      <ConfirmDialog open={Boolean(pendingDelete)} title="Permanently delete student?" description="This cannot be undone. Students with attendance, parent confirmations, or transport issue history cannot be deleted." confirmLabel="Delete student" busy={Boolean(deletingId)} onCancel={()=>{if(!deletingId)setPendingDelete(null)}} onConfirm={()=>{if(pendingDelete)void handleDelete(pendingDelete)}}/>
     </motion.div>
   )
 }

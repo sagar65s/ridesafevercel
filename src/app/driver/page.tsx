@@ -42,6 +42,7 @@ import { nextAttendanceAction, transportModeLabel } from "@/lib/transport";
 import MaintenanceTab from "@/components/admin/MaintenanceTab";
 import MessagesTab from "@/components/admin/MessagesTab";
 import NotificationsPanel from '@/components/transport/NotificationsPanel'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 const BusMap = dynamic(() => import("@/components/BusMap"), { ssr: false });
 const tabs = [
@@ -148,6 +149,7 @@ export default function DriverDashboard() {
     action: string;
   } | null>(null);
   const [actionError, setActionError] = useState("");
+  const [pendingHistoryDelete,setPendingHistoryDelete]=useState<string|null>(null)
   const [gpsWarning, setGpsWarning] = useState<{
     distanceMetres?: number;
   } | null>(null);
@@ -964,7 +966,7 @@ export default function DriverDashboard() {
                       {tx(trip.status.replaceAll("_", " "))}
                     </span>
                   </summary>
-                  <button className="history-delete" onClick={()=>void run(async()=>{await api('/api/trips/history',{id:trip.id},'DELETE');setHistory(items=>items.filter(item=>item.id!==trip.id))})}><Trash2 size={15}/>{tx('Delete from history')}</button>
+                  <button className="history-delete" onClick={()=>setPendingHistoryDelete(trip.id)}><Trash2 size={15}/>{tx('Delete from history')}</button>
                   {trip.attendance.map((item, index) => (
                     <div
                       className="attendance-history"
@@ -1103,6 +1105,7 @@ export default function DriverDashboard() {
           </section>
         </div>
       )}
+      <ConfirmDialog open={Boolean(pendingHistoryDelete)} title="Remove trip from history?" description="This hides the trip from your history view; the school's transport audit record is preserved." confirmLabel="Remove from history" busy={busy} onCancel={()=>{if(!busy)setPendingHistoryDelete(null)}} onConfirm={()=>{if(pendingHistoryDelete)void run(async()=>{await api('/api/trips/history',{id:pendingHistoryDelete},'DELETE');setHistory(items=>items.filter(item=>item.id!==pendingHistoryDelete));setPendingHistoryDelete(null)})}}/>
     </Workspace>
   );
 }

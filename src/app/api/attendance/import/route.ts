@@ -26,8 +26,13 @@ export async function POST(request:NextRequest){
     if(!organizationId)return NextResponse.json({error:'Select a school before importing attendance'},{status:400})
     if(actor.role!=='SUPER_ADMIN'&&requested&&requested!==organizationId)return NextResponse.json({error:'Forbidden'},{status:403})
     const {rows}=await readTabularFile(file,{rows:5000,columns:40})
+    const parsedDays=new Map<number,Date>()
+    for(const row of rows){if(row.value('Status','Attendance Status').trim())parsedDays.set(row.row,parseImportDate(row.value('Date'),row.row))}
+    const dayValues=[...parsedDays.values()].map(day=>day.getTime())
+    const firstDay=dayValues.length?new Date(Math.min(...dayValues)):null
+    const afterLastDay=dayValues.length?new Date(Math.max(...dayValues)+24*60*60*1000):null
     const [trips,students]=await Promise.all([
-      prisma.trip.findMany({where:{route:{organizationId}},include:{route:true,bus:true}}),
+      prisma.trip.findMany({where:{route:{organizationId},...(firstDay&&afterLastDay?{date:{gte:firstDay,lt:afterLastDay}}:{id:'__no_import_rows__'})},include:{route:true,bus:true}}),
       prisma.student.findMany({where:{organizationId},select:{id:true,name:true,studentCode:true,routeId:true,busId:true,pickupStopId:true,dropoffStopId:true}}),
     ])
     const records=new Map<string,{tripId:string;studentId:string;stopId:string|null;action:string;timestamp:Date;recordedById:string;dedupeKey:string}>()
@@ -39,7 +44,7 @@ export async function POST(request:NextRequest){
       const status=actionFor(row.value('Status','Attendance Status'))
       if(!status)continue
       if(!['PICKED_UP','DROPPED_OFF','ABSENT','NOT_MARKED'].includes(status)){errors.push({row:row.row,error:'Unsupported status'});continue}
-      const day=parseImportDate(row.value('Date'),row.row),session=serviceFor(row.value('Session','Service Type'))
+      const day=parsedDays.get(row.row)!,session=serviceFor(row.value('Session','Service Type'))
       affectedDates.add(day.toLocaleDateString('en-CA',{timeZone:'Asia/Kuala_Lumpur'}))
       if(!['MORNING','PM','AFTER_SCHOOL'].includes(session)){errors.push({row:row.row,error:'Unsupported service type'});continue}
       const routeText=row.value('Route','Route Name'),busText=row.value('Bus','Bus Number','Bus Plate'),studentCode=row.value('Student ID','Student Code'),studentText=row.value('Student','Student Name').replace(/\s+\([^)]*\)$/,'').trim()

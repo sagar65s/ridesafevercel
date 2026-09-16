@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { formatRideSafeDate, formatRideSafeDateTime } from '@/lib/date-format'
 import { Trash2 } from 'lucide-react'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface TripRecord {
   id: string; date: string; status: string; routeName: string; driverName: string
@@ -21,6 +22,8 @@ export default function TripHistoryTab({currentRole}:{currentRole:string}) {
   const requestSequence=useRef(0)
   const [organizations,setOrganizations]=useState<{id:string;name:string}[]>([])
   const [organizationId,setOrganizationId]=useState('')
+  const [pendingDeleteId,setPendingDeleteId]=useState<string|null>(null)
+  const [deleting,setDeleting]=useState(false)
 
   const load = useCallback((p: number,silent=false) => {
     const requestId=++requestSequence.current
@@ -38,7 +41,7 @@ export default function TripHistoryTab({currentRole}:{currentRole:string}) {
   useEffect(()=>{const timer=window.setInterval(()=>load(page,true),12000);const onFocus=()=>load(page,true);window.addEventListener('focus',onFocus);return()=>{window.clearInterval(timer);window.removeEventListener('focus',onFocus)}},[load,page])
 
   const statusColor: Record<string, string> = { TRIP_CREATED: '#6B7280', DRIVER_STARTED_ROUTE: '#3B82F6', BUS_EN_ROUTE: '#F59E0B', TRIP_COMPLETED: '#10B981' }
-  const remove=async(id:string)=>{if(!confirm('Remove this trip from your history view? The transport audit record will be preserved.'))return;const response=await fetch('/api/trips/history',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});if(response.ok)setTrips(items=>items.filter(item=>item.id!==id))}
+  const remove=async(id:string)=>{setDeleting(true);try{const response=await fetch('/api/trips/history',{method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});if(!response.ok)throw new Error('Unable to remove trip history');setTrips(items=>items.filter(item=>item.id!==id));setPendingDeleteId(null)}catch(error){setLoadError(error instanceof Error?error.message:'Unable to remove trip history')}finally{setDeleting(false)}}
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
@@ -71,7 +74,7 @@ export default function TripHistoryTab({currentRole}:{currentRole:string}) {
                 </div>
                 <div style={{display:'flex',alignItems:'center',gap:8}}><span className="badge" style={{ background:`${statusColor[trip.status] || '#6B7280'}22`, color:statusColor[trip.status] || '#6B7280', fontSize:'0.75rem' }}>
                   <TranslatedText text={trip.status.replace(/_/g,' ')}/>
-                </span><button className="icon-button" aria-label="Delete from history" onClick={()=>void remove(trip.id)}><Trash2 size={15}/></button></div>
+                </span><button className="icon-button" aria-label="Delete from history" onClick={()=>setPendingDeleteId(trip.id)}><Trash2 size={15}/></button></div>
               </motion.div>
             ))}
             {trips.length === 0 && <div style={{ textAlign:'center', padding:'3rem', color:'var(--text-muted)' }}><TranslatedText text={"No trip history yet."}/></div>}
@@ -86,6 +89,7 @@ export default function TripHistoryTab({currentRole}:{currentRole:string}) {
           </div>
         )}
       </div>
+      <ConfirmDialog open={Boolean(pendingDeleteId)} title="Remove trip from history?" description="This only hides the trip from your history view. The transport audit record is preserved." confirmLabel="Remove from history" busy={deleting} onCancel={()=>{if(!deleting)setPendingDeleteId(null)}} onConfirm={()=>{if(pendingDeleteId)void remove(pendingDeleteId)}}/>
     </motion.div>
   )
 }

@@ -4,8 +4,9 @@ import { useTranslation as useLocaleText } from '@/i18n/provider'
 import { TranslatedText } from '@/i18n/provider'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { CheckCircle, AlertTriangle, Bus, Download, Upload, CalendarDays } from 'lucide-react'
+import { CheckCircle, AlertTriangle, Bus, Download, Upload, CalendarDays, RotateCcw } from 'lucide-react'
 import { formatRideSafeDate, formatRideSafeTime } from '@/lib/date-format'
+import ConfirmDialog from '@/components/ConfirmDialog'
 
 interface RosterEntry {
   studentId: string; studentCode?:string|null; name: string; grade: string
@@ -59,13 +60,28 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
   const [importIssues,setImportIssues]=useState<{row:number;error:string}[]>([])
   const [importWarnings,setImportWarnings]=useState<{row:number;error:string}[]>([])
   const [visibleArchiveRows,setVisibleArchiveRows]=useState(100)
+  const [preferencesReady,setPreferencesReady]=useState(false)
+  const [resetOpen,setResetOpen]=useState(false)
+  const [resetText,setResetText]=useState('')
+  const [resetting,setResetting]=useState(false)
 
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
     setToast(msg); setToastType(type); setTimeout(() => setToast(''), 3000)
   }
 
   useEffect(() => {
-    if(currentRole==='SUPER_ADMIN')fetch('/api/admin/organizations').then(r=>r.json()).then(d=>setOrganizations(d.organizations||[])).catch(()=>{})
+    const savedDate=window.localStorage.getItem('ridesafe.attendance.date')
+    if(savedDate&&/^\d{4}-\d{2}-\d{2}$/.test(savedDate))setDate(savedDate)
+    if(currentRole==='SUPER_ADMIN')setOrganizationId(window.localStorage.getItem('ridesafe.superAdmin.organizationId')||'')
+    setPreferencesReady(true)
+  }, [currentRole])
+  useEffect(()=>{if(preferencesReady)window.localStorage.setItem('ridesafe.attendance.date',date)},[date,preferencesReady])
+  useEffect(()=>{if(preferencesReady&&currentRole==='SUPER_ADMIN'){if(organizationId)window.localStorage.setItem('ridesafe.superAdmin.organizationId',organizationId);else window.localStorage.removeItem('ridesafe.superAdmin.organizationId')}},[organizationId,currentRole,preferencesReady])
+  useEffect(() => {
+    if(currentRole==='SUPER_ADMIN')fetch('/api/admin/organizations').then(r=>r.json()).then(d=>{
+      const list=d.organizations||[];setOrganizations(list)
+      setOrganizationId(value=>value&&list.some((org:Organization)=>org.id===value)?value:'')
+    }).catch(()=>{})
   }, [currentRole])
   useEffect(()=>{if(currentRole==='SUPER_ADMIN'&&!organizationId){Promise.resolve().then(()=>setRoutes([]));return}const query=currentRole==='SUPER_ADMIN'?`?organizationId=${encodeURIComponent(organizationId)}`:'';fetch(`/api/admin/routes${query}`).then(r => r.json()).then(d => setRoutes(d.routes || [])).catch(() => setRoutes([]))},[currentRole,organizationId])
 
@@ -79,7 +95,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
       .catch(error=>{if(requestId!==loadSequence.current)return;setLoadError(error instanceof Error?error.message:'Unable to load school attendance');if(!silent){setTrips([]);setArchived([])}setLoading(false)})
   }, [date, routeId,currentRole,organizationId])
 
-  useEffect(() => { const timer = setTimeout(()=>load(), 0);const refresh=window.setInterval(()=>load(true),10000);const onFocus=()=>load(true);window.addEventListener('focus',onFocus);return () => {clearTimeout(timer);window.clearInterval(refresh);window.removeEventListener('focus',onFocus);loadSequence.current++} }, [load])
+  useEffect(() => {if(!preferencesReady)return;const timer = setTimeout(()=>load(), 0);const refresh=window.setInterval(()=>load(true),15000);const onFocus=()=>load(true);window.addEventListener('focus',onFocus);return () => {clearTimeout(timer);window.clearInterval(refresh);window.removeEventListener('focus',onFocus);loadSequence.current++} }, [load,preferencesReady])
   useEffect(()=>{const timer=setTimeout(()=>setVisibleArchiveRows(100),0);return()=>clearTimeout(timer)},[date,organizationId,routeId])
 
   const exportCSV = () => {
@@ -101,6 +117,19 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
     const body=new FormData();body.append('file',importFile);body.append('organizationId',organizationId);setImporting(true);setImportIssues([]);setImportWarnings([])
     try{const response=await fetch('/api/attendance/import',{method:'POST',body}),result=await response.json();if(!response.ok)throw new Error(result.error||'Attendance import failed');setImportIssues(result.errors||[]);setImportWarnings(result.warnings||[]);showToast(`${result.created} trip records added; ${result.updated||0} updated; ${result.archived||0} historical added; ${result.archivedUpdated||0} historical updated; ${result.skipped} skipped; ${result.duplicates||0} unchanged`,result.skipped?'error':'success');setImportFile(null);if(result.viewDate){setRouteId('');setDate(result.viewDate);if(result.viewDate===date&&!routeId)load()}else load()}
     catch(error){showToast(error instanceof Error?error.message:'Attendance import failed','error')}finally{setImporting(false)}
+  }
+
+  const selectedOrganization=organizations.find(org=>org.id===organizationId)
+  const resetAttendance=async()=>{
+    if(!selectedOrganization)return
+    setResetting(true)
+    try{
+      const response=await fetch('/api/admin/data-reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scope:'ATTENDANCE',organizationId,confirmation:resetText})})
+      const result=await response.json().catch(()=>({}))
+      if(!response.ok)throw new Error(result.error||'Attendance reset failed')
+      setResetOpen(false);setResetText('');setImportIssues([]);setImportWarnings([]);showToast('Selected school attendance reset successfully');load()
+    }catch(error){showToast(error instanceof Error?error.message:'Attendance reset failed','error')}
+    finally{setResetting(false)}
   }
 
   const allRoster = trips.flatMap(t => t.roster)
@@ -154,6 +183,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
             <button className="btn" style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid var(--surface-border)', display: 'flex', alignItems: 'center', gap: 6 }}
               onClick={exportCSV} disabled={trips.length === 0 && archived.length === 0}>
               <Download size={16} /><TranslatedText text={" Export CSV "}/></button>
+            {currentRole==='SUPER_ADMIN'&&<button className="btn btn-danger" disabled={!selectedOrganization} onClick={()=>{setResetText('');setResetOpen(true)}}><RotateCcw size={16}/><TranslatedText text="Reset school attendance"/></button>}
             {['SUPER_ADMIN','SCHOOL_ADMIN'].includes(currentRole)&&<><a className="btn" href="/templates/attendance-period.xlsx" download><Download size={16}/><TranslatedText text=" Excel Template "/></a><a className="btn" href="/templates/attendance-period.csv" download><Download size={16}/><TranslatedText text=" CSV Template "/></a><label className="btn bulk-file"><Upload size={16}/><span><TranslatedText text={importFile?.name||'Choose import file'}/></span><input type="file" accept=".xlsx,.csv" onChange={e=>setImportFile(e.target.files?.[0]||null)}/></label><button className="btn btn-primary" disabled={importing||!importFile} onClick={()=>void importAttendance()}><Upload size={16}/><TranslatedText text={importing?'Importing…':'Import'}/></button></>}
           </div>
         </div>
@@ -255,6 +285,7 @@ export default function AttendanceTab({currentRole}:{currentRole:string}) {
         </article>)}</div>
         {archived.length>visibleArchiveRows&&<button className="btn" onClick={()=>setVisibleArchiveRows(value=>value+100)}><TranslatedText text="Show more uploaded records"/> ({archived.length-visibleArchiveRows})</button>}
       </section>}
+      <ConfirmDialog open={resetOpen} title="Reset school attendance?" description="This permanently removes the selected school's crew attendance, parent confirmations, and uploaded attendance history. Trips and students are preserved." confirmLabel="Reset attendance" busy={resetting} expectedText={selectedOrganization?.name} typedText={resetText} onTypedTextChange={setResetText} onCancel={()=>{if(!resetting){setResetOpen(false);setResetText('')}}} onConfirm={()=>void resetAttendance()}/>
     </motion.div>
   )
 }

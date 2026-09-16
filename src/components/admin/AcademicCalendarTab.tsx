@@ -15,10 +15,12 @@ import {
   Upload,
   FileSpreadsheet,
   Download,
+  RotateCcw,
 } from "lucide-react";
 import { formatRideSafeDate } from "@/lib/date-format";
 import {csvCell} from '@/lib/csv'
 import AcademicYearCalendar from "@/components/transport/AcademicYearCalendar";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 interface AcademicEvent {
   organizationId: string | null;
@@ -76,6 +78,12 @@ export default function AcademicCalendarTab({
   );
   const [importOrganizationId, setImportOrganizationId] = useState("");
   const [importing, setImporting] = useState(false);
+  const [deleteEventId, setDeleteEventId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetText, setResetText] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const [selectionReady, setSelectionReady] = useState(false);
 
   const showToast = (m: string, type: "success" | "error" = "success") => {
     setToast(m);
@@ -105,11 +113,24 @@ export default function AcademicCalendarTab({
   }, [currentRole, importOrganizationId]);
 
   useEffect(() => {
+    if (currentRole === "SUPER_ADMIN") setImportOrganizationId(window.localStorage.getItem("ridesafe.superAdmin.organizationId") || "");
+    setSelectionReady(true);
+  }, [currentRole]);
+  useEffect(() => {
+    if (!selectionReady || currentRole !== "SUPER_ADMIN") return;
+    if (importOrganizationId) window.localStorage.setItem("ridesafe.superAdmin.organizationId", importOrganizationId);
+    else window.localStorage.removeItem("ridesafe.superAdmin.organizationId");
+  }, [currentRole, importOrganizationId, selectionReady]);
+  useEffect(() => {
     fetch("/api/admin/organizations")
       .then((r) => (r.ok ? r.json() : { organizations: [] }))
-      .then((data) => setOrganizations(data.organizations || []))
+      .then((data) => {
+        const list = data.organizations || [];
+        setOrganizations(list);
+        if (currentRole === "SUPER_ADMIN") setImportOrganizationId(value => value && list.some((org: Organization) => org.id === value) ? value : "");
+      })
       .catch(() => {});
-  }, []);
+  }, [currentRole]);
   useEffect(() => {
     void fetchEvents();
     if (currentRole === "SUPER_ADMIN" && !importOrganizationId) {
@@ -226,20 +247,34 @@ export default function AcademicCalendarTab({
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this event?")) return;
-
+  const deleteEvent = async () => {
+    if (!deleteEventId) return;
+    setDeleting(true);
     try {
-      const res = await fetch(`/api/calendar/${id}`, { method: "DELETE" });
+      const res = await fetch(`/api/calendar/${deleteEventId}`, { method: "DELETE" });
       if (res.ok) {
         showToast("Event deleted", "success");
-        fetchEvents();
+        setDeleteEventId(null);
+        await fetchEvents();
       } else {
-        showToast("Failed to delete", "error");
+        showToast((await res.json().catch(() => ({}))).error || "Failed to delete", "error");
       }
     } catch {
       showToast("Network error", "error");
-    }
+    } finally { setDeleting(false); }
+  };
+
+  const selectedOrganization = organizations.find((org) => org.id === importOrganizationId);
+  const resetCalendar = async () => {
+    if (!selectedOrganization) return;
+    setResetting(true);
+    try {
+      const response = await fetch("/api/admin/data-reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scope: "ACADEMIC_CALENDAR", organizationId: importOrganizationId, confirmation: resetText }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || "Calendar reset failed");
+      setResetOpen(false); setResetText(""); setImports([]); showToast("Selected school calendar reset successfully"); await fetchEvents();
+    } catch (error) { showToast(error instanceof Error ? error.message : "Calendar reset failed", "error"); }
+    finally { setResetting(false); }
   };
 
   const handleEdit = (event: AcademicEvent) => {
@@ -382,6 +417,7 @@ export default function AcademicCalendarTab({
             <TranslatedText text={" Add Event "} />
           </motion.button>
           <button className="btn" disabled={!events.length} onClick={exportCalendar}><Download size={18}/><TranslatedText text=" Export Calendar "/></button>
+          {currentRole === "SUPER_ADMIN" && <button className="btn btn-danger" disabled={!selectedOrganization} onClick={() => { setResetText(""); setResetOpen(true); }}><RotateCcw size={18}/><TranslatedText text="Reset school calendar"/></button>}
         </div>
 
         <div
@@ -637,7 +673,7 @@ export default function AcademicCalendarTab({
                         <Edit2 size={18} />
                       </button>
                       <button
-                        onClick={() => handleDelete(event.id)}
+                        onClick={() => setDeleteEventId(event.id)}
                         style={{
                           background: "none",
                           border: "none",
@@ -858,6 +894,8 @@ export default function AcademicCalendarTab({
           </motion.div>
         )}
       </AnimatePresence>
+      <ConfirmDialog open={Boolean(deleteEventId)} title="Delete academic event?" description="This event will be permanently removed from the selected school's calendar." confirmLabel="Delete event" busy={deleting} onCancel={() => { if (!deleting) setDeleteEventId(null); }} onConfirm={() => void deleteEvent()} />
+      <ConfirmDialog open={resetOpen} title="Reset school academic calendar?" description="This permanently removes every academic event and calendar import record for the selected school. Other schools are not affected." confirmLabel="Reset calendar" busy={resetting} expectedText={selectedOrganization?.name} typedText={resetText} onTypedTextChange={setResetText} onCancel={() => { if (!resetting) { setResetOpen(false); setResetText(""); } }} onConfirm={() => void resetCalendar()} />
     </motion.div>
   );
 }

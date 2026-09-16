@@ -116,7 +116,7 @@ test('Super Admin must select the intended school before attendance import',asyn
   form.set('file',new File(['Date,Session,Student,Student ID,Status\n15/09/2026,PM,Amy Student,STU-1,Absent'],'school.csv'))
   const response=await POST(new NextRequest('http://localhost/api/attendance/import',{method:'POST',body:form}))
   expect(response.status).toBe(200)
-  expect(prisma.trip.findMany).toHaveBeenCalledWith(expect.objectContaining({where:{route:{organizationId:'school-a'}}}))
+  expect(prisma.trip.findMany).toHaveBeenCalledWith(expect.objectContaining({where:expect.objectContaining({route:{organizationId:'school-a'}})}))
 })
 
 test('missing production archive migration returns a clear action before writing any trip records',async()=>{

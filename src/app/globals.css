@@ -298,6 +298,18 @@ main { flex: 1; padding: 2rem 0; }
   box-shadow: var(--hc-shadow-lg);
 }
 
+.confirm-dialog { position: relative; max-width: 460px; padding: 2rem; }
+.confirm-dialog-close { position: absolute; top: 1rem; right: 1rem; }
+.confirm-dialog-icon { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 14px; margin-bottom: 1rem; }
+.confirm-dialog-icon.danger { color: var(--hc-danger); background: rgba(255,69,58,.12); border: 1px solid rgba(255,69,58,.28); }
+.confirm-dialog-icon.warning { color: var(--hc-yellow); background: rgba(255,214,10,.1); border: 1px solid rgba(255,214,10,.25); }
+.confirm-dialog h3 { margin: 0 2.5rem .65rem 0; font-size: 1.25rem; }
+.confirm-dialog p { margin: 0; color: var(--hc-text2); line-height: 1.6; }
+.confirm-dialog-verify { display: grid; gap: .6rem; margin-top: 1.25rem; color: var(--hc-text2); font-size: .86rem; }
+.confirm-dialog-verify .input-field { margin: 0; }
+.confirm-dialog-actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1.5rem; }
+.confirm-dialog-actions .btn { min-width: 110px; justify-content: center; }
+
 .fleet-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 
 @media (max-width: 900px) {
